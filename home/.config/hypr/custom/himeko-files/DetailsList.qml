@@ -13,6 +13,7 @@ ListView {
     signal renamed(var item, string name)
     signal renameCancelled()
 
+    property real pad: 16
     readonly property var cols: [
         { key: "name", label: "Name", w: 0 },
         { key: "size", label: "Size", w: 110 },
@@ -27,8 +28,8 @@ ListView {
         width: root.width
         Loader { width: parent.width; sourceComponent: root.headerComponent }
         RowLayout {
-            x: root.leftMargin
-            width: root.width - root.leftMargin - root.rightMargin
+            x: root.pad
+            width: root.width - 2 * root.pad
             height: 40
             spacing: 0
             Repeater {
@@ -82,8 +83,7 @@ ListView {
         readonly property bool selected: root.tab.selection[modelData.path] === true
         readonly property bool cut: Fs.clip.mode === "move" && Fs.clip.paths.indexOf(modelData.path) >= 0
         readonly property string kind: Fs.kindOf(modelData)
-        x: root.leftMargin
-        width: root.width - root.leftMargin - root.rightMargin
+        width: root.width // ListView pins delegates at x = 0: pad inside instead
         height: 48
         hoverEnabled: true
         acceptedButtons: Qt.LeftButton | Qt.RightButton
@@ -102,6 +102,7 @@ ListView {
 
         Rectangle {
             anchors.fill: parent
+            anchors.leftMargin: root.pad; anchors.rightMargin: root.pad
             radius: Theme.rRow
             color: row.selected ? Theme.primaryContainer : (row.containsMouse ? Theme.hover : "transparent")
             border.width: root.tab.current === row.modelData.path && !row.selected ? 1 : 0
@@ -109,6 +110,7 @@ ListView {
         }
         RowLayout {
             anchors.fill: parent
+            anchors.leftMargin: root.pad; anchors.rightMargin: root.pad
             spacing: 0
             RowLayout {
                 Layout.fillWidth: true

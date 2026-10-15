@@ -15,8 +15,9 @@ ListView {
     signal renamed(var item, string name)
     signal renameCancelled()
 
+    property real pad: 24          // side padding; ListView's left/rightMargin don't apply to the header the same way
     readonly property real gap: 14
-    readonly property real usable: width - leftMargin - rightMargin
+    readonly property real usable: width - 2 * pad
     readonly property int folderCols: Math.max(1, Math.floor((usable + gap) / (230 + gap)))
     readonly property real tileW: 150 * zoom
     readonly property int fileCols: Math.max(1, Math.floor((usable + gap) / (tileW + gap)))
@@ -48,7 +49,7 @@ ListView {
     boundsBehavior: Flickable.StopAtBounds
     reuseItems: true
     cacheBuffer: 600
-    header: headerComponent
+    header: Loader { width: root.width; sourceComponent: root.headerComponent }
     footer: Item { width: 1; height: 96 }
 
     // Clicking empty space clears the selection; right-click there opens the folder menu
@@ -67,10 +68,10 @@ ListView {
     delegate: Item {
         id: row
         required property var modelData
-        width: root.usable
-        x: root.leftMargin
+        width: root.width // ListView pins delegates at x = 0: pad inside instead
         height: modelData.kind === "label" ? 26 : grid.implicitHeight
         Text {
+            x: root.pad
             visible: row.modelData.kind === "label"
             anchors.bottom: parent.bottom
             text: row.modelData.text ?? ""
@@ -80,7 +81,8 @@ ListView {
         GridLayout {
             id: grid
             visible: row.modelData.kind !== "label"
-            width: parent.width
+            x: root.pad
+            width: root.usable
             columns: row.modelData.kind === "folders" ? root.folderCols : root.fileCols
             columnSpacing: root.gap
             rowSpacing: 0

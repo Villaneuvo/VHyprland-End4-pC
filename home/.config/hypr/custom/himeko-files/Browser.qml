@@ -271,7 +271,7 @@ FocusScope {
                     visible: root.tab && root.tab.viewMode === "icons"
                     tab: root.tab
                     zoom: root.zoom
-                    topMargin: 134; leftMargin: 24; rightMargin: 24
+                    topMargin: 134; pad: 24
                     headerComponent: headerComp
                     renamingPath: root.renamingPath
                     onActivated: (it) => root.activate(it)
@@ -285,7 +285,7 @@ FocusScope {
                     anchors.fill: parent
                     visible: root.tab && root.tab.viewMode === "details"
                     tab: root.tab
-                    topMargin: 134; leftMargin: 16; rightMargin: 16
+                    topMargin: 134; pad: 24
                     headerComponent: headerComp
                     renamingPath: root.renamingPath
                     onActivated: (it) => root.activate(it)
@@ -491,7 +491,8 @@ FocusScope {
                         required property var modelData
                         required property int index
                         readonly property bool on: index === root.tabIndex
-                        implicitWidth: tabRow.implicitWidth + (on ? 10 : 32); implicitHeight: 44
+                        readonly property bool closable: on && root.tabs.length > 1
+                        implicitWidth: 16 + tabRow.implicitWidth + (closable ? 8 : 16); implicitHeight: 44
                         hoverEnabled: true
                         acceptedButtons: Qt.LeftButton | Qt.MiddleButton
                         cursorShape: Qt.PointingHandCursor
@@ -506,7 +507,7 @@ FocusScope {
                         Row {
                             id: tabRow
                             anchors.verticalCenter: parent.verticalCenter
-                            x: parent.on ? 16 : 16
+                            x: 16
                             spacing: 8
                             Rectangle { visible: on; width: 8; height: 8; radius: 4; color: Theme.primary; anchors.verticalCenter: parent.verticalCenter }
                             Text {
@@ -516,7 +517,7 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                             }
                             IconButton {
-                                visible: on && root.tabs.length > 1
+                                visible: closable
                                 implicitWidth: 28; implicitHeight: 28; iconSize: 15
                                 icon: "close"; tip: "Close tab"
                                 anchors.verticalCenter: parent.verticalCenter
@@ -627,9 +628,10 @@ FocusScope {
     Component {
         id: headerComp
         Item {
-            width: main.width
+            width: parent ? parent.width : 0
             implicitHeight: 92
             RowLayout {
+                // Title lines up with the first tile, the sort button with the last column
                 anchors { left: parent.left; right: parent.right; top: parent.top; leftMargin: 28; rightMargin: 24 }
                 spacing: 16
                 ColumnLayout {
