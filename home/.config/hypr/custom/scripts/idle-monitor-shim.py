@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """GNOME's org.gnome.Mutter.IdleMonitor for Hyprland.
 
-Hyprland has no idle-time D-Bus API, so apps like GajiHub TimeTracker report "Input Monitoring"
+Hyprland has no idle-time D-Bus API, so time-tracking apps that ask GNOME report "Input Monitoring"
 as missing. This serves GetIdletime() = ms since the last keyboard/mouse/touchpad event, read from
 /dev/input (needs the `input` group). Only event timestamps are used; key contents are never parsed.
 Run only inside Hyprland: under GNOME, Mutter owns this name itself.

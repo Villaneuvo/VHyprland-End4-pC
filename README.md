@@ -1,35 +1,128 @@
-# hyprland-dotfiles
+<div align="center">
 
-My Hyprland desktop on **Ubuntu 26.04**: [illogical-impulse](https://github.com/end-4/dots-hyprland) with the
-[end4-pC](https://github.com/pctrade/end4-pC) shell, the **himeko** preset (Honkai: Star Rail), and a set of fixes
-and extras that make it behave like a complete desktop on Ubuntu.
+# 💠 VHyprland-End4-pC
 
-## New machine
+**Hyprland on Ubuntu 26.04 with [illogical-impulse](https://github.com/end-4/dots-hyprland) and the [end4-pC](https://github.com/pctrade/end4-pC) shell**  
+Himeko preset · Ubuntu fixes · display tools · one-command install
+
+*V for **Villaneuvo***
+
+</div>
+
+---
+
+## 📸 Screenshots
+
+<p align="center">
+  <img src="screenshots/desktop.jpg" alt="Desktop" width="90%"/>
+</p>
+
+<div align="center">
+
+| 🏠 Dashboard (`Super+Esc`) | ⏻ Session Menu |
+|:---:|:---:|
+| ![Dashboard](screenshots/dashboard.jpg) | ![Session menu](screenshots/session-menu.jpg) |
+| 🖥️ Display Navigation (`Super+Alt+P`) | 🛠️ Display Settings |
+| ![Display Navigation](screenshots/display-navigation.jpg) | ![Display Settings](screenshots/display-settings.jpg) |
+
+</div>
+
+---
+
+## ✨ Features
+
+- 🎨 **end4-pC + the Himeko preset** on top of illogical-impulse, running on stock Ubuntu (no Arch, no Nix)
+- 🖥️ **Display Navigation**: a Windows+P style picker (PC only / Duplicate / Extend / Second screen only)
+- 🛠️ **Display Settings**: drag to arrange monitors, resolution, refresh rate, scale, orientation, primary display,
+  Identify, and an automatic revert after 15 s if the new layout is unusable
+- 🔔 **Notifications that open their app on click**, like GNOME or Windows (no extra *Activate* button), and proper
+  icons for Chrome notifications
+- 💤 **Sleep that turns into hibernate**: suspend instantly, hibernate on its own after 2 hours (opt-in)
+- 🔊 **Desktop polish**: volume tick sound, a shutter sound and a notification for every screenshot, USB automount,
+  SMART disk warnings, Ubuntu update notifications, night light
+- 🧩 **Intel + NVIDIA laptops**: Hyprland renders on the iGPU, and screen sharing works
+
+---
+
+## ⚡ Installation
+
+> [!NOTE]
+> Run it **from a terminal inside your normal (GNOME) session**, as your user. It asks for your sudo password, takes a
+> while (it builds Quickshell), and is safe to re-run.
 
 ```bash
 sudo apt install gh && gh auth login     # the repo is private: log in first (GitHub.com → HTTPS → browser)
-gh repo clone Villaneuvo/hyprland-dotfiles ~/hyprland-dotfiles
-cd ~/hyprland-dotfiles
+gh repo clone Villaneuvo/VHyprland-End4-pC ~/VHyprland-End4-pC
+cd ~/VHyprland-End4-pC
 ./install.sh
 ```
 
-Run it **from a terminal inside your normal (GNOME) session**, as your user. It asks for your sudo password,
-takes a while (it builds Quickshell), and is safe to re-run. When it finishes, log out and pick the
-**Hyprland** session on the login screen (not "Hyprland (uwsm-managed)").
+When it finishes, log out and pick the **Hyprland** session on the login screen (not "Hyprland (uwsm-managed)").
+Then set the AI sidebar keys again (`Super+A`, then `/key`): keys live in the keyring, not in this repo.
 
-After that, set the AI sidebar keys again (`Super+A`, then `/key`): keys live in the keyring, not in this repo.
-
-## Keeping the repo up to date
+### 🔄 Keeping it up to date
 
 ```bash
-cd ~/hyprland-dotfiles
-./sync.sh                       # copies the live files listed in manifest.txt into home/
-git commit -m "Update dotfiles" && git push
+./sync.sh                                # copy the live files listed in manifest.txt into home/
+git commit -am "Update dotfiles" && git push
 ```
 
 On another machine: `git pull && ./install.sh files` copies only the config files.
 
-## What install.sh does
+---
+
+## ⌨️ Keybinds
+
+| Keys | Action |
+|---|---|
+| `Super+Esc` | Dashboard and settings (presets, wallpapers) |
+| `Super+Alt+P` | Display Navigation |
+| `Super+Alt+Shift+P` | Reset displays to the configured layout |
+| `Super+Shift+L` | Sleep (suspend, then hibernate after 2 h when enabled) |
+| `Print` / `Ctrl+Print` | Screenshot to the clipboard / to the clipboard and `~/Pictures/Screenshots` |
+| `Super+Shift+S` | Region screenshot (also saved to `~/Pictures/Screenshots`) |
+
+Everything else is illogical-impulse's: open the launcher (`Super`) and type `<` for the full list.
+
+---
+
+## 💤 Hibernate (opt-in)
+
+Ubuntu disables hibernation. `./enable-hibernate.sh` turns it on:
+
+- **Hibernate** in the session menu hibernates straight away.
+- **Sleep** (lid, sleep key, `Super+Shift+L`, session menu) suspends at once and hibernates after 2 hours
+  (`DELAY=90min ./enable-hibernate.sh` to change it).
+
+> [!TIP]
+> The screen goes black while the image is written. After a long day with many apps open that can take a minute or
+> two: wait until the power light goes off. Switching off early loses the image and the next boot starts fresh.
+
+<details>
+<summary>How it works and how to undo it</summary>
+
+- A 32 GB swap file (`/swap-hibernate.img`, beside the normal one) and a polkit rule overriding Ubuntu's block.
+- dracut's `resume` module and `lz4` in the running kernel's initramfs; images are written with lz4 (faster than
+  the default lzo). The script checks the new initramfs still has `crypt`/`lvm`/`resume`/`lz4` and restores the old
+  one otherwise.
+- No kernel parameters: systemd ≥ 255 passes the resume location through an EFI variable. Works with LUKS (you type
+  the disk password on resume, as on a normal boot).
+- `HibernateDelaySec`, logind's lid/sleep-key actions and `nvidia-suspend-then-hibernate.service` for the Sleep part.
+
+**Undo:** `sudo swapoff /swap-hibernate.img && sudo rm /swap-hibernate.img`, delete its `/etc/fstab` line,
+`sudo rm /etc/polkit-1/rules.d/40-allow-hibernate.rules /etc/dracut.conf.d/90-hibernate-resume.conf
+/etc/tmpfiles.d/hibernate-lz4.conf /etc/systemd/sleep.conf.d/90-suspend-then-hibernate.conf
+/etc/systemd/logind.conf.d/90-suspend-then-hibernate.conf`, `sudo systemctl reload systemd-logind`,
+`sudo update-initramfs -u`. If a boot ever fails: GRUB → Advanced options → the older kernel.
+
+</details>
+
+---
+
+## 🔧 Under the hood
+
+<details>
+<summary>What install.sh does</summary>
 
 | Step | Why |
 |---|---|
@@ -38,82 +131,57 @@ On another machine: `git pull && ./install.sh files` copies only the config file
 | Builds Quickshell at the commit dots-hyprland pins | Not packaged for Ubuntu. Built with Ubuntu's QML path and without the crash handler (no `cpptrace`). |
 | uv, matugen, Material Symbols / Rubik / Readex Pro / JetBrains Mono Nerd fonts, adw-gtk3, Darkly | Not in Ubuntu's repos. |
 | dots-hyprland `./setup install --skip-alldeps` with a local `os-release` saying `ID=arch` | Its installer forces a broken Nix route on Ubuntu. |
-| Patches ii (`FluentWinUI3` import) and end4-pC (`var double`, session-menu Logout, notifications) | Ubuntu's Qt 6.10 rejects the first two, so the shells don't load; end4-pC's Logout (`pkill Hyprland`) gets undone by the `start-hyprland` watchdog, so it uses `hyprshutdown`. Notifications: see below. `custom/scripts/end4pc-patches.sh` holds the end4-pC patches and re-runs at every login, because end4-pC's updater re-clones itself. |
-| Copies `home/` (see `manifest.txt`) | All the customizations below. Replaced files are backed up to `~/.dotfiles-backup/`. |
+| Patches ii (`FluentWinUI3` import) and end4-pC (`var double`, Logout, Sleep, notifications) | Ubuntu's Qt 6.10 rejects the first two, so the shells don't load. end4-pC's Logout (`pkill Hyprland`) gets undone by the `start-hyprland` watchdog, so it uses `hyprshutdown`. `custom/scripts/end4pc-patches.sh` re-applies the end4-pC patches at every login, because end4-pC's updater re-clones itself. |
+| Copies `home/` (see `manifest.txt`) | All the customizations. Replaced files are backed up to `~/.dotfiles-backup/`. |
 | Masks `waybar`, `swaync`, `hypridle`, `hyprsunset` user services | They start via `graphical-session.target` and fight end4-pC or duplicate ii's autostart. |
 | `plasma-applications.menu` symlink | Dolphin's "Open with" list is empty without it. |
 | Intel + NVIDIA laptops: udev rule for `/dev/dri/intel-igpu` and `nvidia-dgpu` | Hyprland renders on the iGPU (`custom/env.lua`). Skipped on other hardware. |
 | fisher + nvm.fish, nwg-displays 0.4.4 (venv), mpvpaper | Node in fish, advanced monitor settings (Ubuntu's 0.3.x can't write Lua), video wallpapers. |
 
 Pinned versions (top of `install.sh`): dots-hyprland `2f2a376`, end4-pC `96b45aa`, matugen 4.2.0, nwg-displays 0.4.4.
-Try newer ones with `DOTS_REF=main END4_REF=main ./install.sh`, at your own risk: newer upstream may need a newer Hyprland/Qt than Ubuntu has.
+Try newer ones with `DOTS_REF=main END4_REF=main ./install.sh`, at your own risk: newer upstream may need a newer
+Hyprland/Qt than Ubuntu has.
 
-## What's customized
+</details>
 
-Everything lives in files dots-hyprland never overwrites (`~/.config/hypr/custom/`, `monitors.lua`, `xdph.conf`, fish `conf.d`).
+<details>
+<summary>Where the customizations live</summary>
 
-**Keys and UI**
-- `Super+Esc`: end4-pC settings / dashboard (presets, wallpapers)
-- `Super+Alt+P`: **Display Navigation**, a Win+P style picker (PC only / Duplicate / Extend / Second screen only), Himeko themed
-- **Display Settings** (launcher): drag-to-arrange monitors, resolution, refresh rate, scale, orientation, on/off,
-  **primary display** (workspace 1 + cursor start there), **Identify** (big number on each screen), auto-revert after 15 s
-- `Super+Alt+Shift+P`: reset displays to the configured layout
-- **Notifications**: left-click a popup or a panel entry to open it (same as its *Activate* button; right-click expands,
-  middle-click dismisses). Chrome's notification logos (temp files) show the Chrome icon instead of a broken one
-  (`custom/scripts/end4pc-notifications.patch`)
-- Volume keys play GNOME's tick; `Print`, `Ctrl+Print` and `Super+Shift+S` all notify and play a shutter;
-  `Super+Shift+S` also saves to `~/Pictures/Screenshots`
+Everything is in files dots-hyprland never overwrites:
 
-**Autostart (`custom/execs.lua`)**: hyprsunset, notification sounds, screenshot notifications, SMART disk warnings,
-USB automount (udiskie), evolution alarms, update-notifier, a GNOME-compatible idle-time service for apps like
-GajiHub TimeTracker (`custom/scripts/idle-monitor-shim.py`, physical input only).
+- `~/.config/hypr/custom/`: env, autostart (`execs.lua`), keybinds, rules, scripts, the display tools
+- `~/.config/hypr/monitors.lua`: this laptop's monitor layout (harmless elsewhere: unknown monitors are placed
+  automatically; use **Display Settings** to redo it)
+- `~/.config/hypr/xdph.conf`: `force_shm` (screen sharing on Intel+NVIDIA) and a pre-ticked restore token
+- `~/.config/hyprland-mimeapps.list`: Image Viewer for images, VLC for video (GNOME's list is ignored under Hyprland)
+- fish `conf.d`: the same PATH as `.zshrc`, nvm.fish in `~/.local/share/fisher`
+- `~/.config/illogical-impulse/`: end4-pC settings and the Himeko preset
+- `custom/scripts/idle-monitor-shim.py`: GNOME's idle-time D-Bus API for apps that check it (physical input only)
 
-**Other**
-- `xdph.conf`: `force_shm` (screen sharing works on Intel+NVIDIA), restore token pre-ticked
-- `hyprland-mimeapps.list`: Image Viewer for images, VLC for video (GNOME's own list is ignored under Hyprland)
-- fish: same PATH as `.zshrc`, nvm.fish in `~/.local/share/fisher` (dots-hyprland wipes `~/.config/fish/functions`)
-- end4-pC: himeko preset, sounds on, `apt` update command, Gemini 3.8 Flash (high thinking) in the AI sidebar
+</details>
 
-## Hibernate (opt-in)
+---
 
-Ubuntu disables hibernation. `./enable-hibernate.sh` turns it on: a 32 GB swap file (`/swap-hibernate.img`, beside the
-normal one), a polkit rule overriding Ubuntu's block, and dracut's `resume` module + `lz4` in the running kernel's
-initramfs (images are written with lz4, faster than the default lzo).
-
-It also makes **Sleep** (lid, sleep key, `Super+Shift+L`, session menu) a *suspend-then-hibernate*: instant suspend,
-then hibernate after 2 hours (`DELAY=90min ./enable-hibernate.sh` to change). **Hibernate** in the session menu
-still hibernates straight away.
-No kernel parameters: systemd ≥ 255 passes the resume location through an EFI variable. Works with LUKS (you type the
-disk password on resume, as on a normal boot). It checks the new initramfs still has `crypt`/`lvm`/`resume` and restores
-the old one otherwise. **Test once with your work saved**: `systemctl hibernate` (or Hibernate in the session menu).
-The screen goes black while the image is written; after a long day with many apps open that can take a minute or
-two. Wait until the power light goes off: switching off early loses the image and the next boot starts fresh.
-
-Undo: `sudo swapoff /swap-hibernate.img && sudo rm /swap-hibernate.img`, delete its `/etc/fstab` line,
-`sudo rm /etc/polkit-1/rules.d/40-allow-hibernate.rules /etc/dracut.conf.d/90-hibernate-resume.conf
-/etc/tmpfiles.d/hibernate-lz4.conf /etc/systemd/sleep.conf.d/90-suspend-then-hibernate.conf
-/etc/systemd/logind.conf.d/90-suspend-then-hibernate.conf`, `sudo systemctl reload systemd-logind`,
-`sudo update-initramfs -u`. If a boot ever fails: GRUB → Advanced options → the older kernel.
-
-## Machine-specific bits
-
-- `home/.config/hypr/monitors.lua` holds this laptop's layout (LG ULTRAGEAR above the built-in screen). Harmless
-  elsewhere: unknown monitors fall back to automatic placement. Use **Display Settings** to redo it.
-- GajiHub TimeTracker is not included: download its AppImage to `~/Applications/` and add a launcher.
-
-## Troubleshooting
+## 🩺 Troubleshooting
 
 - **Bar, wallpaper and widgets gone** after updating end4-pC: log out and back in, or run
   `~/.config/hypr/custom/scripts/end4pc-qt610-fix.sh`.
-- **Broken icons in GTK apps** (a page with a warning sign): the GTK icon theme got set to a cursor theme.
-  `gsettings reset org.gnome.desktop.interface icon-theme`.
-- **Session menu**: Task Manager opens GNOME System Monitor; Logout uses `hyprshutdown`.
 - **After updating dots-hyprland** (`./setup install`): it resyncs `~/.config/quickshell`, which deletes end4-pC.
   Run `./install.sh` again (it re-clones and re-patches).
 - **apt upgraded Qt**: rebuild Quickshell (delete `~/src/quickshell/build`, re-run `./install.sh`).
+- **Broken icons in GTK apps** (a page with a warning sign): the GTK icon theme got set to a cursor theme.
+  `gsettings reset org.gnome.desktop.interface icon-theme`.
+- **Screen frozen after resuming from hibernate** (seen twice, not reproduced since): before powering off, try
+  `Ctrl+Alt+F3`, then `Ctrl+Alt+F2`. Switching VTs makes Hyprland set the screen up again.
 - Check the Hyprland config: `Hyprland --verify-config`. Shell logs: `qs log -c end4-pC`.
 
-## Credits
+---
 
-end-4 (illogical-impulse), pctrade (end4-pC), the end4-pC presets community (himeko preset by @Blapples).
+## 🙏 Credits
+
+- **[@end-4](https://github.com/end-4)**: [dots-hyprland](https://github.com/end-4/dots-hyprland) / illogical-impulse
+- **[@pctrade](https://github.com/pctrade)**: [end4-pC](https://github.com/pctrade/end4-pC) and the
+  [presets gallery](https://github.com/pctrade/end4-pCpresets)
+- **@Blapples**: the Himeko preset
+
 Himeko artwork © its creators / HoYoverse; kept here for personal use, which is one reason this repo is private.
