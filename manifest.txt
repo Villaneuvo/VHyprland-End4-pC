@@ -1,0 +1,37 @@
+# Files and folders (relative to $HOME) that make up this desktop.
+# sync.sh copies them from this machine into home/; install.sh copies them back.
+# Absolute home paths are stored as @HOME@ so the repo works for any username.
+
+# Hyprland customizations (custom/ is never overwritten by dots-hyprland updates)
+.config/hypr/custom/env.lua
+.config/hypr/custom/execs.lua
+.config/hypr/custom/general.lua
+.config/hypr/custom/keybinds.lua
+.config/hypr/custom/rules.lua
+.config/hypr/custom/variables.lua
+.config/hypr/custom/scripts/display-mode.sh
+.config/hypr/custom/scripts/end4pc-qt610-fix.sh
+.config/hypr/custom/scripts/idle-monitor-shim.py
+.config/hypr/custom/scripts/notification-sound.sh
+.config/hypr/custom/scripts/snip-notify.sh
+.config/hypr/custom/display-switcher
+.config/hypr/monitors.lua
+.config/hypr/xdph.conf
+
+# end4-pC settings + the himeko preset and its images
+.config/illogical-impulse/config.json
+.config/illogical-impulse/presets
+.cache/quickshell/presets/himeko.json
+.cache/quickshell/presets/assets/himeko
+.face
+Pictures/Wallpapers/himeko_nova.jpg
+Pictures/Wallpapers/HNRCja-aMAA6JdE.jpg
+
+# fish (PATH like .zshrc, fisher + nvm.fish setup)
+.config/fish/conf.d/user-paths.fish
+.config/fish/conf.d/fisher-path.fish
+
+# Default apps + launcher entries
+.config/hyprland-mimeapps.list
+.local/share/applications/display-settings.desktop
+.local/share/applications/nwg-displays.desktop

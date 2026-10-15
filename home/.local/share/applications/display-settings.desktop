@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Display Settings
+GenericName=Monitor layout
+Comment=Arrange monitors, set resolution, refresh rate, scale and orientation
+Exec=qs -p @HOME@/.config/hypr/custom/display-switcher/settings.qml
+Icon=preferences-desktop-display
+Categories=Settings;HardwareSettings;
+Keywords=display;monitor;screen;resolution;layout;refresh;scale;
+Terminal=false

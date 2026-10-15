@@ -1,0 +1,4 @@
+# Local build/test leftovers
+*.log
+.dotfiles-backup/
+*.bak

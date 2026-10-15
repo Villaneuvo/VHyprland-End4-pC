@@ -1,0 +1,36 @@
+# apt packages for Ubuntu 26.04 (install.sh adds the two PPAs first).
+
+# Hyprland stack (ppa:cppiber/hyprland: Hyprland >= 0.55 is needed for the Lua config)
+hyprland hypridle hyprlock hyprpicker hyprsunset xdg-desktop-portal-hyprland xwayland
+
+# illogical-impulse / end4-pC runtime
+cava pavucontrol-qt wireplumber pipewire-pulse playerctl libdbusmenu-gtk3-4 easyeffects
+geoclue-2-demo brightnessctl ddcutil bc cliphist curl wget ripgrep jq xdg-user-dirs rsync git unzip
+breeze breeze-icon-theme eza fish kitty foot starship fontconfig fonts-space-grotesk fonts-noto-color-emoji bibata-cursor-theme
+wl-clipboard bluez bluedevil gnome-keyring network-manager plasma-nm polkit-kde-agent-1 dolphin systemsettings kde-cli-tools libkf6config-bin
+xdg-desktop-portal xdg-desktop-portal-kde xdg-desktop-portal-gtk plasma-integration
+slurp grim swappy tesseract-ocr tesseract-ocr-eng wf-recorder upower wtype ydotool fuzzel imagemagick translate-shell wlogout qalc
+libglib2.0-bin libnotify-bin ffmpeg zenity
+
+# Qt / QML modules used by the shell
+qt6-wayland qt6-svg-plugins kimageformat6-plugins qt6-image-formats-plugins qt6-translations-l10n
+qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts qml6-module-qtquick-shapes
+qml6-module-qtquick-effects qml6-module-qtquick-window qml6-module-qtquick-templates qml6-module-qtqml
+qml6-module-qtqml-models qml6-module-qtqml-workerscript qml6-module-qtcore qml6-module-qt-labs-folderlistmodel
+qml6-module-qt-labs-synchronizer qml6-module-qt5compat-graphicaleffects qml6-module-qtmultimedia
+qml6-module-qtpositioning qml6-module-qtsensors qml6-module-qtquick-timeline qml6-module-qtquick-virtualkeyboard
+qt6-virtualkeyboard-plugin qml6-module-org-kde-kirigami qml6-module-org-kde-syntaxhighlighting kdialog
+
+# Building Quickshell + the shell's Python venv
+build-essential cmake ninja-build pkg-config spirv-tools libcli11-dev
+qt6-base-dev qt6-base-private-dev qt6-declarative-dev qt6-declarative-private-dev qt6-shadertools-dev qt6-wayland-dev
+libdrm-dev libgbm-dev libvulkan-dev libwayland-dev libwayland-bin wayland-protocols
+libpipewire-0.3-dev libxcb1-dev libpam0g-dev libpolkit-agent-1-dev libglib2.0-dev libjemalloc-dev
+clang python3-dev python3-venv meson libcairo2-dev libdbus-1-dev libgirepository-2.0-dev gobject-introspection
+libgtk-4-dev libadwaita-1-dev libsoup-3.0-dev libportal-gtk4-dev
+
+# Extras we added along the way
+# songrec: music recognition (ppa:marin-m/songrec) | libmpv-dev: build mpvpaper (video wallpapers)
+# libjack-jackd2-dev: keeps jackd2 when libmpv-dev pulls libjack-dev | udiskie: USB automount
+# gir1.2-gtklayershell-0.1: nwg-displays
+songrec libmpv-dev libjack-jackd2-dev udiskie gir1.2-gtklayershell-0.1
