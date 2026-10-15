@@ -7,7 +7,8 @@ and extras that make it behave like a complete desktop on Ubuntu.
 ## New machine
 
 ```bash
-git clone https://github.com/<you>/hyprland-dotfiles.git ~/hyprland-dotfiles
+sudo apt install gh && gh auth login     # the repo is private: log in first (GitHub.com → HTTPS → browser)
+gh repo clone Villaneuvo/hyprland-dotfiles ~/hyprland-dotfiles
 cd ~/hyprland-dotfiles
 ./install.sh
 ```
