@@ -10,7 +10,7 @@ breeze breeze-icon-theme eza fish kitty foot starship fontconfig fonts-space-gro
 wl-clipboard bluez bluedevil gnome-keyring network-manager plasma-nm polkit-kde-agent-1 dolphin systemsettings kde-cli-tools libkf6config-bin
 xdg-desktop-portal xdg-desktop-portal-kde xdg-desktop-portal-gtk plasma-integration
 slurp grim swappy tesseract-ocr tesseract-ocr-eng wf-recorder upower wtype ydotool fuzzel imagemagick translate-shell wlogout qalc
-libglib2.0-bin libnotify-bin ffmpeg zenity
+libglib2.0-bin libnotify-bin ffmpeg zenity pulseaudio-utils
 
 # Qt / QML modules used by the shell
 qt6-wayland qt6-svg-plugins kimageformat6-plugins qt6-image-formats-plugins qt6-translations-l10n
