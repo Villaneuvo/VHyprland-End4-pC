@@ -124,9 +124,8 @@ install_ii() {
 install_end4pc() {
     log "Installing end4-pC @ ${END4_REF:0:7}"
     clone_at https://github.com/pctrade/end4-pC.git "$END4" "$END4_REF"
-    # Qt 6.10's QML parser rejects a variable named `double` (custom/scripts/end4pc-qt610-fix.sh re-applies this at login)
-    sed -i -E 's/\bvar double\b/var dbl/; s/\) double = (true|false)/) dbl = \1/g; s/if \(double\)/if (dbl)/' \
-        "$END4/modules/ii/background/widgets/images/ImageCardWidget.qml"
+    # Ubuntu patches (Qt 6.10 `double`, clean logout) are applied by custom/scripts/end4pc-patches.sh
+    # right after copy_files, and again at every login because end4-pC's updater drops them.
 }
 
 copy_files() {
@@ -216,6 +215,7 @@ case "${1:-all}" in
         install_ii
         install_end4pc
         copy_files
+        "$HOME/.config/hypr/custom/scripts/end4pc-patches.sh"
         desktop_tweaks
         extras
         log "Done"

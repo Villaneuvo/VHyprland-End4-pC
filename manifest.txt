@@ -11,6 +11,7 @@
 .config/hypr/custom/variables.lua
 .config/hypr/custom/scripts/display-mode.sh
 .config/hypr/custom/scripts/end4pc-qt610-fix.sh
+.config/hypr/custom/scripts/end4pc-patches.sh
 .config/hypr/custom/scripts/idle-monitor-shim.py
 .config/hypr/custom/scripts/notification-sound.sh
 .config/hypr/custom/scripts/snip-notify.sh

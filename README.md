@@ -38,7 +38,7 @@ On another machine: `git pull && ./install.sh files` copies only the config file
 | Builds Quickshell at the commit dots-hyprland pins | Not packaged for Ubuntu. Built with Ubuntu's QML path and without the crash handler (no `cpptrace`). |
 | uv, matugen, Material Symbols / Rubik / Readex Pro / JetBrains Mono Nerd fonts, adw-gtk3, Darkly | Not in Ubuntu's repos. |
 | dots-hyprland `./setup install --skip-alldeps` with a local `os-release` saying `ID=arch` | Its installer forces a broken Nix route on Ubuntu. |
-| Patches ii (`FluentWinUI3` import) and end4-pC (`var double`) | Ubuntu's Qt 6.10 rejects both; the shells don't load otherwise. `custom/scripts/end4pc-qt610-fix.sh` re-applies the end4-pC patch at every login, because end4-pC's updater re-clones itself. |
+| Patches ii (`FluentWinUI3` import) and end4-pC (`var double`, session-menu Logout) | Ubuntu's Qt 6.10 rejects the first two, so the shells don't load; end4-pC's Logout (`pkill Hyprland`) gets undone by the `start-hyprland` watchdog, so it uses `hyprshutdown`. `custom/scripts/end4pc-patches.sh` holds the end4-pC patches and re-runs at every login, because end4-pC's updater re-clones itself. |
 | Copies `home/` (see `manifest.txt`) | All the customizations below. Replaced files are backed up to `~/.dotfiles-backup/`. |
 | Masks `waybar`, `swaync`, `hypridle`, `hyprsunset` user services | They start via `graphical-session.target` and fight end4-pC or duplicate ii's autostart. |
 | `plasma-applications.menu` symlink | Dolphin's "Open with" list is empty without it. |
@@ -71,6 +71,18 @@ GajiHub TimeTracker (`custom/scripts/idle-monitor-shim.py`, physical input only)
 - fish: same PATH as `.zshrc`, nvm.fish in `~/.local/share/fisher` (dots-hyprland wipes `~/.config/fish/functions`)
 - end4-pC: himeko preset, sounds on, `apt` update command, Gemini 3.8 Flash (high thinking) in the AI sidebar
 
+## Hibernate (opt-in)
+
+Ubuntu disables hibernation. `./enable-hibernate.sh` turns it on: a 32 GB swap file (`/swap-hibernate.img`, beside the
+normal one), a polkit rule overriding Ubuntu's block, and dracut's `resume` module in the running kernel's initramfs.
+No kernel parameters: systemd ≥ 255 passes the resume location through an EFI variable. Works with LUKS (you type the
+disk password on resume, as on a normal boot). It checks the new initramfs still has `crypt`/`lvm`/`resume` and restores
+the old one otherwise. **Test once with your work saved**: `systemctl hibernate` (or Hibernate in the session menu).
+
+Undo: `sudo swapoff /swap-hibernate.img && sudo rm /swap-hibernate.img`, delete its `/etc/fstab` line,
+`sudo rm /etc/polkit-1/rules.d/40-allow-hibernate.rules /etc/dracut.conf.d/90-hibernate-resume.conf`,
+`sudo update-initramfs -u`. If a boot ever fails: GRUB → Advanced options → the older kernel.
+
 ## Machine-specific bits
 
 - `home/.config/hypr/monitors.lua` holds this laptop's layout (LG ULTRAGEAR above the built-in screen). Harmless
@@ -81,6 +93,7 @@ GajiHub TimeTracker (`custom/scripts/idle-monitor-shim.py`, physical input only)
 
 - **Bar, wallpaper and widgets gone** after updating end4-pC: log out and back in, or run
   `~/.config/hypr/custom/scripts/end4pc-qt610-fix.sh`.
+- **Session menu**: Task Manager opens GNOME System Monitor; Logout uses `hyprshutdown`.
 - **After updating dots-hyprland** (`./setup install`): it resyncs `~/.config/quickshell`, which deletes end4-pC.
   Run `./install.sh` again (it re-clones and re-patches).
 - **apt upgraded Qt**: rebuild Quickshell (delete `~/src/quickshell/build`, re-run `./install.sh`).

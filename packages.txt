@@ -34,3 +34,5 @@ libgtk-4-dev libadwaita-1-dev libsoup-3.0-dev libportal-gtk4-dev
 # libjack-jackd2-dev: keeps jackd2 when libmpv-dev pulls libjack-dev | udiskie: USB automount
 # gir1.2-gtklayershell-0.1: nwg-displays
 songrec libmpv-dev libjack-jackd2-dev udiskie gir1.2-gtklayershell-0.1
+# gnome-system-monitor: session menu "Task Manager" + Ctrl+Shift+Esc | hyprshutdown: clean logout
+gnome-system-monitor hyprshutdown
