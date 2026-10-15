@@ -12,8 +12,7 @@ Rectangle {
     implicitWidth: rail ? 72 : 248
     radius: Theme.rPanel
     color: Theme.chrome
-    border.width: 1
-    border.color: Theme.edge
+    Sheen { radius: root.radius; tint: 0.08 }
     Behavior on implicitWidth { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
     readonly property var places: [

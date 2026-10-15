@@ -13,8 +13,7 @@ Rectangle {
     implicitWidth: 320
     radius: Theme.rPanel
     color: Theme.chrome
-    border.width: 1
-    border.color: Theme.edge
+    Sheen { radius: root.radius; tint: 0.08 }
 
     onItemChanged: {
         details = {};

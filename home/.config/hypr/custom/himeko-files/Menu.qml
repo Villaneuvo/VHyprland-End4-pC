@@ -15,9 +15,8 @@ Rectangle {
     height: col.implicitHeight + 16
     radius: 22
     color: Theme.menu
-    border.width: 1
-    border.color: Theme.edge
     focus: true
+    Sheen { radius: root.radius; light: 0.05; tint: 0.04; edge: 0.12 }
 
     readonly property var actionable: entries.map((e, i) => e.separator || e.disabled ? -1 : i).filter(i => i >= 0)
     function move(d) {

@@ -236,6 +236,21 @@ FocusScope {
         e.accepted = handled;
     }
 
+    // ---- window glass: thin tint everywhere, sheen, accent edge ----
+    Rectangle {
+        anchors.fill: parent
+        radius: Theme.rWindow
+        color: Theme.alpha(Theme.surface, 0.30)
+        Sheen { radius: parent.radius; light: 0.05; tint: 0.10; edge: 0 }
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            color: "transparent"
+            border.width: 1.5
+            border.color: Theme.alpha(Theme.primary, 0.45)
+        }
+    }
+
     // ---- layout ----
     RowLayout {
         anchors.fill: parent

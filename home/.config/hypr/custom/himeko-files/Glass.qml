@@ -39,7 +39,6 @@ Item {
         anchors.fill: parent
         radius: root.radius
         color: root.tint
-        border.width: root.border ? 1 : 0
-        border.color: Theme.edge
     }
+    Sheen { radius: root.radius; edge: root.border ? 0.12 : 0 }
 }
