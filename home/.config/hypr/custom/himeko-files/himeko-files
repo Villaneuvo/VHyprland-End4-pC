@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Opens Himeko Files at a folder. Accepts a path, a file:// URI or a file (opens the folder it is in).
+p=${1:-$HOME}
+case "$p" in file://*) p=${p#file://}; p=$(printf '%b' "${p//%/\\x}") ;; esac
+[ -f "$p" ] && p=$(dirname -- "$p")
+[ -d "$p" ] || p=$HOME
+p=$(cd -- "$p" && pwd -P)
+HF_PATH="$p" exec qs -p "$(dirname -- "$(readlink -f -- "$0")")/shell.qml"

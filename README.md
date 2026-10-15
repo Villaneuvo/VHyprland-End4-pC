@@ -24,6 +24,8 @@ Himeko preset · Ubuntu fixes · display tools · one-command install
 | ![Dashboard](screenshots/dashboard.jpg) | ![Session menu](screenshots/session-menu.jpg) |
 | 🖥️ Display Navigation (`Super+Alt+P`) | 🛠️ Display Settings |
 | ![Display Navigation](screenshots/display-navigation.jpg) | ![Display Settings](screenshots/display-settings.jpg) |
+| 🗂️ Himeko Files (`Super+E`) | 🍪 Himeko Files: menu |
+| ![Himeko Files](screenshots/himeko-files-info.jpg) | ![Himeko Files context menu](screenshots/himeko-files-menu.jpg) |
 | 🔒 Lockscreen Display (`Super+L`) | |
 | ![Lockscreen](/screenshots/lockscreen.jpeg) |
 </div>
@@ -38,6 +40,8 @@ Himeko preset · Ubuntu fixes · display tools · one-command install
   Identify, and an automatic revert after 15 s if the new layout is unusable
 - 🔔 **Notifications that open their app on click**, like GNOME or Windows (no extra *Activate* button), and proper
   icons for Chrome notifications
+- 🗂️ **Himeko Files**: a file manager built for this desktop (Quickshell/QML, like the shell itself): glass sidebar,
+  floating toolbar, tabs, icons and details views, expressive selection shapes, undoable trash/rename/paste
 - 🐬 **Dolphin "Himeko Glass"**: translucent sidebar, toolbar and menus over Hyprland's blur, a near-solid file view,
   a small floating status bar; Dolphin and every Qt app follow end4-pC's wallpaper colors
 - 💤 **Sleep that turns into hibernate**: suspend instantly, hibernate on its own after 2 hours (opt-in)
@@ -79,6 +83,7 @@ On another machine: `git pull && ./install.sh files` copies only the config file
 | Keys | Action |
 |---|---|
 | `Super+Esc` | Dashboard and settings (presets, wallpapers) |
+| `Super+E` | Himeko Files |
 | `Super+Alt+P` | Display Navigation |
 | `Super+Alt+Shift+P` | Reset displays to the configured layout |
 | `Super+Shift+L` | Sleep (suspend, then hibernate after 2 h when enabled) |
@@ -88,6 +93,24 @@ On another machine: `git pull && ./install.sh files` copies only the config file
 Everything else is illogical-impulse's: open the launcher (`Super`) and type `<` for the full list.
 
 ---
+
+## 🗂️ Himeko Files
+
+The file manager from the design canvas, made real: Quickshell + QML in `~/.config/hypr/custom/himeko-files/`, colors
+straight from end4-pC (it follows the wallpaper), the Material Symbols icon font and expressive shapes
+(cookie = selected, flower = special folder, burst = count). `Super+E` or **Himeko Files** in the launcher;
+`himeko-files [FOLDER]` from a terminal.
+
+- **Browse**: places, USB drives (mount/eject), tabs, back/forward, breadcrumbs (click the last one or `Ctrl+L` to
+  type a path), filters (All/Images/Videos/Docs), sort, hidden files, type-to-search
+- **Files**: open, Open with, cut/copy/paste (shares the clipboard with Dolphin, Chrome...), rename in place, new
+  folder, compress/extract, set as wallpaper, copy path, open a terminal here, Trash and Restore, all **undoable**
+  (`Ctrl+Z` or the toast's Undo). It never overwrites: clashing names become "name (2)"
+- **Keys**: `Ctrl+1/2` icons/details, `Ctrl+T/W` tabs, `F2` rename, `Del` trash, `Shift+Del` delete,
+  `Ctrl+Shift+N` new folder, `F11` info panel, `F9` sidebar rail, `Ctrl+±` zoom, arrows/Shift to select
+
+Not there yet (use **Show in Dolphin** from its menus): drag and drop, split view, network places, tags.
+File operations live in `ops.sh`; `ops.sh selftest` checks them (naming, copy/move, zip, trash and restore).
 
 ## 💤 Hibernate (opt-in)
 

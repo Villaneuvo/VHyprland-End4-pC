@@ -25,6 +25,10 @@ hl.bind("CTRL + Print", hl.dsp.exec_cmd(
     "notify-send -a 'Screen Snip' -i \"$f\" 'Screenshot Saved' \"Saved to $f\""),
     { locked = true, description = "Utilities: Screenshot >> clipboard & file" })
 
+-- Himeko Files instead of Dolphin (Dolphin stays installed: "Show in Dolphin" in the app's menus)
+hl.unbind("SUPER + E")
+hl.bind("SUPER + E", hl.dsp.exec_cmd("$HOME/.config/hypr/custom/himeko-files/himeko-files"), { description = "App: File manager" })
+
 -- Sleep: suspend now, hibernate later (enable-hibernate.sh sets the delay); plain suspend where that isn't set up
 hl.unbind("SUPER + SHIFT + L")
 hl.bind("SUPER + SHIFT + L", hl.dsp.exec_cmd("systemctl suspend-then-hibernate || systemctl suspend || loginctl suspend"),

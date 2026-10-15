@@ -546,7 +546,7 @@
       "blur": {
         "enabled": true,
         "passes": 3,
-        "size": 1
+        "size": 8
       },
       "inactiveOpacity": 0.9,
       "rounding": 22,

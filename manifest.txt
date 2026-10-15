@@ -18,8 +18,11 @@
 .config/hypr/custom/scripts/notification-sound.sh
 .config/hypr/custom/scripts/snip-notify.sh
 .config/hypr/custom/display-switcher
+.config/hypr/custom/himeko-files
 .config/hypr/monitors.lua
 .config/hypr/xdph.conf
+# end4-pC's own Hyprland overrides (blur size 8 instead of the preset's 1, rounding, inactive opacity)
+.config/hypr/hyprland/shellOverrides/main.lua
 
 # end4-pC settings + the himeko preset and its images
 .config/illogical-impulse/config.json
@@ -47,4 +50,5 @@ Pictures/Wallpapers/HNRCja-aMAA6JdE.jpg
 # Default apps + launcher entries
 .config/hyprland-mimeapps.list
 .local/share/applications/display-settings.desktop
+.local/share/applications/himeko-files.desktop
 .local/share/applications/nwg-displays.desktop
