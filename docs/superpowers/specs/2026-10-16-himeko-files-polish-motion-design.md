@@ -59,9 +59,11 @@ panel sliding in does not rebuild the grid every frame (tiles stretch until it s
 
 ## Scroll edge effect
 
-A static gradient band from the main panel's top edge down to 60 px below the tabs: the content
-background color at 95 % fading to transparent. It sits above the file view and below the glass
-capsules, so content fades out before it passes under the chrome. No per-frame cost.
+A gradient band from the main panel's top edge down to 60 px below the tabs: the content background
+color at 95 % fading to transparent. It sits above the file view and below the glass capsules, so content
+fades out before it passes under the chrome. Like iOS it only shows once content scrolls under the chrome:
+its opacity follows the scroll offset (0 at rest, full after 40 px), so the large title is never dimmed.
+No animation of its own: a binding on the scroll position.
 
 ## Narrow windows
 
