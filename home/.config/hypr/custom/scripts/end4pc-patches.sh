@@ -12,6 +12,8 @@ f="$E4/modules/ii/background/widgets/images/ImageCardWidget.qml"
 # restarts Hyprland. hyprshutdown is the clean exit Hyprland's docs recommend.
 f="$E4/modules/common/functions/Session.qml"
 [ -f "$f" ] && sed -i 's#Quickshell.execDetached(\["pkill", "-i", "Hyprland"\]);#Quickshell.execDetached(["bash", "-c", "hyprshutdown -t \x27Logging out...\x27 || hyprctl dispatch \x27hl.dsp.exit()\x27"]);#' "$f"
+# Session menu "Sleep": suspend now, hibernate later (falls back to plain suspend where that isn't set up)
+[ -f "$f" ] && sed -i 's#"systemctl suspend || loginctl suspend"#"systemctl suspend-then-hibernate || systemctl suspend || loginctl suspend"#' "$f"
 
 # Notifications: a left click opens the app (like the "Activate" button), and Chrome's
 # temp-file logos show the app icon instead of a broken one. Skipped if already applied.

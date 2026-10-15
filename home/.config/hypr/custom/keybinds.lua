@@ -25,6 +25,11 @@ hl.bind("CTRL + Print", hl.dsp.exec_cmd(
     "notify-send -a 'Screen Snip' -i \"$f\" 'Screenshot Saved' \"Saved to $f\""),
     { locked = true, description = "Utilities: Screenshot >> clipboard & file" })
 
+-- Sleep: suspend now, hibernate later (enable-hibernate.sh sets the delay); plain suspend where that isn't set up
+hl.unbind("SUPER + SHIFT + L")
+hl.bind("SUPER + SHIFT + L", hl.dsp.exec_cmd("systemctl suspend-then-hibernate || systemctl suspend || loginctl suspend"),
+    { locked = true, description = "Session: Sleep" })
+
 -- Windows+P style display modes (Super+P is ii's "pin window"). Emergency reset re-enables every screen.
 hl.bind("SUPER + ALT + P", hl.dsp.exec_cmd("$HOME/.config/hypr/custom/scripts/display-mode.sh"),
     { description = "Display: Choose mode (extend/mirror/single)" })
