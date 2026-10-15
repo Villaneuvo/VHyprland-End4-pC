@@ -24,6 +24,7 @@ Himeko preset · Ubuntu fixes · display tools · one-command install
 | ![Dashboard](screenshots/dashboard.jpg) | ![Session menu](screenshots/session-menu.jpg) |
 | 🖥️ Display Navigation (`Super+Alt+P`) | 🛠️ Display Settings |
 | ![Display Navigation](screenshots/display-navigation.jpg) | ![Display Settings](screenshots/display-settings.jpg) |
+| 🔒 Lockscreen Display (`Super+L`) | |
 | ![Lockscreen](/screenshots/lockscreen.jpeg) |
 </div>
 
