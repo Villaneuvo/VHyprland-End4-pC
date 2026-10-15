@@ -186,3 +186,5 @@ Everything is in files dots-hyprland never overwrites:
 - **@Blapples**: the Himeko preset
 
 Himeko artwork © its creators / HoYoverse; kept here for personal use, which is one reason this repo is private.
+
+Made with ❤️ — open source project feel free to modify
