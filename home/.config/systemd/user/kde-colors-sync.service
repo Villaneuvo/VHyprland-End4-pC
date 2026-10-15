@@ -1,0 +1,6 @@
+[Unit]
+Description=Copy the current KDE color scheme into kdeglobals
+
+[Service]
+Type=oneshot
+ExecStart=%h/.config/hypr/custom/scripts/kde-colors-sync.sh

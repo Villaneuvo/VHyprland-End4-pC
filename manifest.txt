@@ -14,6 +14,7 @@
 .config/hypr/custom/scripts/end4pc-patches.sh
 .config/hypr/custom/scripts/end4pc-notifications.patch
 .config/hypr/custom/scripts/idle-monitor-shim.py
+.config/hypr/custom/scripts/kde-colors-sync.sh
 .config/hypr/custom/scripts/notification-sound.sh
 .config/hypr/custom/scripts/snip-notify.sh
 .config/hypr/custom/display-switcher
@@ -36,6 +37,12 @@ Pictures/Wallpapers/HNRCja-aMAA6JdE.jpg
 # Icons Breeze lacks (Evolution reminders' appointment-soon, from Yaru)
 .local/share/icons/hicolor/48x48/status/appointment-soon.png
 .local/share/icons/hicolor/256x256/status/appointment-soon.png
+
+# Qt apps: Dolphin "Himeko Glass" (Darkly translucency, status bar) and the KDE color sync service
+.config/darklyrc
+.config/dolphinrc
+.config/systemd/user/kde-colors-sync.path
+.config/systemd/user/kde-colors-sync.service
 
 # Default apps + launcher entries
 .config/hyprland-mimeapps.list

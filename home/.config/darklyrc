@@ -1,0 +1,13 @@
+[Style]
+WidgetDrawShadow=false
+CornerRadius=10
+DolphinSidebarOpacity=62
+DolphinViewOpacity=88
+TransparentDolphinView=true
+ToolBarOpacity=62
+TabBarOpacity=62
+MenuBarOpacity=62
+MenuOpacity=82
+DisableDolphinUrlNavigatorBackground=true
+DockWidgetDrawFrame=false
+SidePanelDrawFrame=false

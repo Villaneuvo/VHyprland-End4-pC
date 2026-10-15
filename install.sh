@@ -161,6 +161,10 @@ desktop_tweaks() {
     echo "This file is just here to confirm you've been greeted :>" > "$HOME/.local/state/quickshell/user/first_run.txt"
     # Services that fight end4-pC (or duplicate ii's autostart) when started via graphical-session.target
     systemctl --user mask waybar.service swaync.service hypridle.service hyprsunset.service 2>/dev/null || true
+    # Qt apps follow end4-pC's colors: copy its KDE scheme into kdeglobals now and whenever it changes
+    systemctl --user daemon-reload
+    systemctl --user enable --now kde-colors-sync.path 2>/dev/null || true
+    "$HOME/.config/hypr/custom/scripts/kde-colors-sync.sh" || true
     # KDE apps (Dolphin "Open with") look for plasma-applications.menu, which only Plasma ships
     mkdir -p "$HOME/.config/menus"
     ln -sf /etc/xdg/menus/gnome-applications.menu "$HOME/.config/menus/plasma-applications.menu"

@@ -38,6 +38,8 @@ Himeko preset · Ubuntu fixes · display tools · one-command install
   Identify, and an automatic revert after 15 s if the new layout is unusable
 - 🔔 **Notifications that open their app on click**, like GNOME or Windows (no extra *Activate* button), and proper
   icons for Chrome notifications
+- 🐬 **Dolphin "Himeko Glass"**: translucent sidebar, toolbar and menus over Hyprland's blur, a near-solid file view,
+  a small floating status bar; Dolphin and every Qt app follow end4-pC's wallpaper colors
 - 💤 **Sleep that turns into hibernate**: suspend instantly, hibernate on its own after 2 hours (opt-in)
 - 🔊 **Desktop polish**: volume tick sound, a shutter sound and a notification for every screenshot, USB automount,
   SMART disk warnings, Ubuntu update notifications, night light
@@ -157,6 +159,11 @@ Everything is in files dots-hyprland never overwrites:
 - `~/.config/hyprland-mimeapps.list`: Image Viewer for images, VLC for video (GNOME's list is ignored under Hyprland)
 - fish `conf.d`: the same PATH as `.zshrc`, nvm.fish in `~/.local/share/fisher`
 - `~/.config/illogical-impulse/`: end4-pC settings and the Himeko preset
+- `~/.config/darklyrc`, `~/.config/dolphinrc`: the Dolphin glass look (Darkly opacities: chrome 62 %, file view 88 %,
+  menus 82 %) and the small status bar; `custom/general.lua` blurs popup menus
+- `custom/scripts/kde-colors-sync.sh` + `kde-colors-sync.path` (systemd user unit): end4-pC generates a KDE color
+  scheme, but applying it needs Plasma's `plasma-apply-colorscheme`; this copies it into `kdeglobals` whenever it
+  changes, so Qt apps stop showing install-day colors
 - `custom/scripts/idle-monitor-shim.py`: GNOME's idle-time D-Bus API for apps that check it (physical input only)
 
 </details>
@@ -170,6 +177,8 @@ Everything is in files dots-hyprland never overwrites:
 - **After updating dots-hyprland** (`./setup install`): it resyncs `~/.config/quickshell`, which deletes end4-pC.
   Run `./install.sh` again (it re-clones and re-patches).
 - **apt upgraded Qt**: rebuild Quickshell (delete `~/src/quickshell/build`, re-run `./install.sh`).
+- **Qt apps (Dolphin, System Settings) in the wrong colors**: `~/.config/hypr/custom/scripts/kde-colors-sync.sh`,
+  and check `systemctl --user status kde-colors-sync.path`. Darkly changes need the app reopened.
 - **Broken icons in GTK apps** (a page with a warning sign): the GTK icon theme got set to a cursor theme.
   `gsettings reset org.gnome.desktop.interface icon-theme`.
 - **Screen frozen after resuming from hibernate** (seen twice, not reproduced since): before powering off, try
