@@ -15,6 +15,11 @@ f="$E4/modules/common/functions/Session.qml"
 # Session menu "Sleep": suspend now, hibernate later (falls back to plain suspend where that isn't set up)
 [ -f "$f" ] && sed -i 's#"systemctl suspend || loginctl suspend"#"systemctl suspend-then-hibernate || systemctl suspend || loginctl suspend"#' "$f"
 
+# Wallpaper thumbnails: magick can't write into ~/.cache/thumbnails/x-large if the folder doesn't exist yet,
+# so the wallpaper pickers showed empty tiles. Create the folder first.
+f="$E4/modules/common/widgets/ThumbnailImage.qml"
+[ -f "$f" ] && sed -i "s#\[ -f '\${thumbPath}' \] \&\& exit 0 || { tmp=#[ -f '\${thumbPath}' ] \&\& exit 0 || { mkdir -p \"\$(dirname '\${thumbPath}')\"; tmp=#" "$f"
+
 # Notifications: a left click opens the app (like the "Activate" button), and Chrome's
 # temp-file logos show the app icon instead of a broken one. Skipped if already applied.
 p="$(dirname "$0")/end4pc-notifications.patch"
