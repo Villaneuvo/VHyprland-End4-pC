@@ -12,6 +12,7 @@
 .config/hypr/custom/scripts/display-mode.sh
 .config/hypr/custom/scripts/end4pc-qt610-fix.sh
 .config/hypr/custom/scripts/end4pc-patches.sh
+.config/hypr/custom/scripts/end4pc-notifications.patch
 .config/hypr/custom/scripts/idle-monitor-shim.py
 .config/hypr/custom/scripts/notification-sound.sh
 .config/hypr/custom/scripts/snip-notify.sh
@@ -31,6 +32,10 @@ Pictures/Wallpapers/HNRCja-aMAA6JdE.jpg
 # fish (PATH like .zshrc, fisher + nvm.fish setup)
 .config/fish/conf.d/user-paths.fish
 .config/fish/conf.d/fisher-path.fish
+
+# Icons Breeze lacks (Evolution reminders' appointment-soon, from Yaru)
+.local/share/icons/hicolor/48x48/status/appointment-soon.png
+.local/share/icons/hicolor/256x256/status/appointment-soon.png
 
 # Default apps + launcher entries
 .config/hyprland-mimeapps.list

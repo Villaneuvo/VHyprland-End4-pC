@@ -38,7 +38,7 @@ On another machine: `git pull && ./install.sh files` copies only the config file
 | Builds Quickshell at the commit dots-hyprland pins | Not packaged for Ubuntu. Built with Ubuntu's QML path and without the crash handler (no `cpptrace`). |
 | uv, matugen, Material Symbols / Rubik / Readex Pro / JetBrains Mono Nerd fonts, adw-gtk3, Darkly | Not in Ubuntu's repos. |
 | dots-hyprland `./setup install --skip-alldeps` with a local `os-release` saying `ID=arch` | Its installer forces a broken Nix route on Ubuntu. |
-| Patches ii (`FluentWinUI3` import) and end4-pC (`var double`, session-menu Logout) | Ubuntu's Qt 6.10 rejects the first two, so the shells don't load; end4-pC's Logout (`pkill Hyprland`) gets undone by the `start-hyprland` watchdog, so it uses `hyprshutdown`. `custom/scripts/end4pc-patches.sh` holds the end4-pC patches and re-runs at every login, because end4-pC's updater re-clones itself. |
+| Patches ii (`FluentWinUI3` import) and end4-pC (`var double`, session-menu Logout, notifications) | Ubuntu's Qt 6.10 rejects the first two, so the shells don't load; end4-pC's Logout (`pkill Hyprland`) gets undone by the `start-hyprland` watchdog, so it uses `hyprshutdown`. Notifications: see below. `custom/scripts/end4pc-patches.sh` holds the end4-pC patches and re-runs at every login, because end4-pC's updater re-clones itself. |
 | Copies `home/` (see `manifest.txt`) | All the customizations below. Replaced files are backed up to `~/.dotfiles-backup/`. |
 | Masks `waybar`, `swaync`, `hypridle`, `hyprsunset` user services | They start via `graphical-session.target` and fight end4-pC or duplicate ii's autostart. |
 | `plasma-applications.menu` symlink | Dolphin's "Open with" list is empty without it. |
@@ -58,6 +58,9 @@ Everything lives in files dots-hyprland never overwrites (`~/.config/hypr/custom
 - **Display Settings** (launcher): drag-to-arrange monitors, resolution, refresh rate, scale, orientation, on/off,
   **primary display** (workspace 1 + cursor start there), **Identify** (big number on each screen), auto-revert after 15 s
 - `Super+Alt+Shift+P`: reset displays to the configured layout
+- **Notifications**: left-click a popup or a panel entry to open it (same as its *Activate* button; right-click expands,
+  middle-click dismisses). Chrome's notification logos (temp files) show the Chrome icon instead of a broken one
+  (`custom/scripts/end4pc-notifications.patch`)
 - Volume keys play GNOME's tick; `Print`, `Ctrl+Print` and `Super+Shift+S` all notify and play a shutter;
   `Super+Shift+S` also saves to `~/Pictures/Screenshots`
 
@@ -93,6 +96,8 @@ Undo: `sudo swapoff /swap-hibernate.img && sudo rm /swap-hibernate.img`, delete 
 
 - **Bar, wallpaper and widgets gone** after updating end4-pC: log out and back in, or run
   `~/.config/hypr/custom/scripts/end4pc-qt610-fix.sh`.
+- **Broken icons in GTK apps** (a page with a warning sign): the GTK icon theme got set to a cursor theme.
+  `gsettings reset org.gnome.desktop.interface icon-theme`.
 - **Session menu**: Task Manager opens GNOME System Monitor; Logout uses `hyprshutdown`.
 - **After updating dots-hyprland** (`./setup install`): it resyncs `~/.config/quickshell`, which deletes end4-pC.
   Run `./install.sh` again (it re-clones and re-patches).

@@ -12,4 +12,11 @@ f="$E4/modules/ii/background/widgets/images/ImageCardWidget.qml"
 # restarts Hyprland. hyprshutdown is the clean exit Hyprland's docs recommend.
 f="$E4/modules/common/functions/Session.qml"
 [ -f "$f" ] && sed -i 's#Quickshell.execDetached(\["pkill", "-i", "Hyprland"\]);#Quickshell.execDetached(["bash", "-c", "hyprshutdown -t \x27Logging out...\x27 || hyprctl dispatch \x27hl.dsp.exit()\x27"]);#' "$f"
+
+# Notifications: a left click opens the app (like the "Activate" button), and Chrome's
+# temp-file logos show the app icon instead of a broken one. Skipped if already applied.
+p="$(dirname "$0")/end4pc-notifications.patch"
+patch -d "$E4" -p1 --dry-run -R -s -f < "$p" >/dev/null 2>&1 ||
+    patch -d "$E4" -p1 -N -s -f --no-backup-if-mismatch -r - < "$p" ||
+    echo "end4pc-patches: notifications patch no longer applies (end4-pC changed upstream)" >&2
 exit 0

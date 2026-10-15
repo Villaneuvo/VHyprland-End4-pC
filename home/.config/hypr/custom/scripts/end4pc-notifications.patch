@@ -1,0 +1,75 @@
+diff --git a/modules/common/widgets/NotificationGroup.qml b/modules/common/widgets/NotificationGroup.qml
+index 9f572a5..e03fe84 100644
+--- a/modules/common/widgets/NotificationGroup.qml
++++ b/modules/common/widgets/NotificationGroup.qml
+@@ -92,6 +92,14 @@ MouseArea { // Notification group area
+         onClicked: (mouse) => {
+             if (mouse.button === Qt.MiddleButton) 
+                 root.destroyWithAnimation();
++            // Plain left click (not a swipe): open the newest notification like its "Activate" button
++            else if (mouse.button === Qt.LeftButton && Math.abs(mouse.x - startX) < 10 && Math.abs(mouse.y - startY) < 10) {
++                const latest = root.notifications[root.notificationCount - 1];
++                if (latest?.actions.some((action) => action.identifier === "default"))
++                    Notifications.attemptInvokeAction(latest.notificationId, "default");
++                else
++                    root.toggleExpanded();
++            }
+         }
+ 
+         onDraggingChanged: () => {
+diff --git a/modules/common/widgets/NotificationItem.qml b/modules/common/widgets/NotificationItem.qml
+index 9f61cf9..a83273a 100644
+--- a/modules/common/widgets/NotificationItem.qml
++++ b/modules/common/widgets/NotificationItem.qml
+@@ -73,6 +73,11 @@ Item { // Notification item area
+             if (mouse.button === Qt.MiddleButton) {
+                 root.destroyWithAnimation();
+             }
++            // Plain left click (not a swipe) on an expanded notification: same as its "Activate" button
++            else if (mouse.button === Qt.LeftButton && Math.abs(mouse.x - startX) < 10 && Math.abs(mouse.y - startY) < 10
++                    && notificationObject.actions.some((action) => action.identifier === "default")) {
++                Notifications.attemptInvokeAction(notificationObject.notificationId, "default");
++            }
+         }
+ 
+         onDraggingChanged: () => {
+diff --git a/services/Notifications.qml b/services/Notifications.qml
+index 63e3081..5137ca7 100644
+--- a/services/Notifications.qml
++++ b/services/Notifications.qml
+@@ -26,7 +26,7 @@ Singleton {
+         })) ?? []
+         property bool popup: false
+         property bool isTransient: notification?.hints.transient ?? false
+-        property string appIcon: notification?.appIcon ?? ""
++        property string appIcon: root.fixAppIcon(notification?.appIcon ?? "", notification?.desktopEntry || appName)
+         property string appName: notification?.appName ?? ""
+         property string body: notification?.body ?? ""
+         property string image: notification?.image ?? ""
+@@ -42,6 +42,13 @@ Singleton {
+         }
+     }
+ 
++    // Chrome sends its logo as file:///tmp/...: the icon provider can't load file:// URLs, and Chrome
++    // deletes the file later anyway. Use the app's own icon for temp files; strip file:// from the rest.
++    function fixAppIcon(icon, app) {
++        if (icon.includes("/tmp/")) return AppSearch.guessIcon(app);
++        return icon.replace(/^file:\/\//, "");
++    }
++
+     function notifToJSON(notif) {
+         return {
+             "notificationId": notif.notificationId,
+@@ -284,10 +291,10 @@ Singleton {
+                     return notifComponent.createObject(root, {
+                         "notificationId": notif.notificationId,
+                         "actions": [], // Notification actions are meaningless if they're not tracked by the server or the sender is dead
+-                        "appIcon": notif.appIcon,
++                        "appIcon": root.fixAppIcon(notif.appIcon, notif.appName),
+                         "appName": notif.appName,
+                         "body": notif.body,
+-                        "image": notif.image,
++                        "image": notif.image.includes("/tmp/") ? "" : notif.image, // the sender has deleted it by now
+                         "summary": notif.summary,
+                         "time": notif.time,
+                         "urgency": notif.urgency,

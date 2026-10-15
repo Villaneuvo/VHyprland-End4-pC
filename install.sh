@@ -124,7 +124,7 @@ install_ii() {
 install_end4pc() {
     log "Installing end4-pC @ ${END4_REF:0:7}"
     clone_at https://github.com/pctrade/end4-pC.git "$END4" "$END4_REF"
-    # Ubuntu patches (Qt 6.10 `double`, clean logout) are applied by custom/scripts/end4pc-patches.sh
+    # Ubuntu patches (Qt 6.10 `double`, clean logout, notification clicks/icons) are applied by custom/scripts/end4pc-patches.sh
     # right after copy_files, and again at every login because end4-pC's updater drops them.
 }
 
