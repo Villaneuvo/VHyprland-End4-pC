@@ -81,6 +81,8 @@ normal one), a polkit rule overriding Ubuntu's block, and dracut's `resume` modu
 No kernel parameters: systemd ≥ 255 passes the resume location through an EFI variable. Works with LUKS (you type the
 disk password on resume, as on a normal boot). It checks the new initramfs still has `crypt`/`lvm`/`resume` and restores
 the old one otherwise. **Test once with your work saved**: `systemctl hibernate` (or Hibernate in the session menu).
+The screen goes black while the image is written; after a long day with many apps open that can take a minute or
+two. Wait until the power light goes off: switching off early loses the image and the next boot starts fresh.
 
 Undo: `sudo swapoff /swap-hibernate.img && sudo rm /swap-hibernate.img`, delete its `/etc/fstab` line,
 `sudo rm /etc/polkit-1/rules.d/40-allow-hibernate.rules /etc/dracut.conf.d/90-hibernate-resume.conf`,
