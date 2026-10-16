@@ -371,12 +371,16 @@ FocusScope {
                     tint: root.editingPath || root.searching ? Theme.surfaceHigh : Theme.chrome
                     Rectangle {
                         anchors.fill: parent; radius: height / 2; color: "transparent"
-                        border.width: root.editingPath || root.searching ? 2 : 0; border.color: Theme.primary
+                        border.width: 2; border.color: Theme.primary
+                        opacity: root.editingPath || root.searching ? 1 : 0
+                        Behavior on opacity { Anim { kind: "effects" } }
                     }
                     // Breadcrumbs
                     Flickable {
                         id: crumbs
-                        visible: !root.editingPath && !root.searching
+                        opacity: root.editingPath || root.searching ? 0 : 1
+                        visible: opacity > 0
+                        Behavior on opacity { Anim { kind: "effects" } }
                         anchors { fill: parent; leftMargin: 10; rightMargin: 10 }
                         contentWidth: crumbRow.implicitWidth
                         clip: true
@@ -441,7 +445,9 @@ FocusScope {
                     }
                     // Path editor / search field
                     RowLayout {
-                        visible: root.editingPath || root.searching
+                        opacity: root.editingPath || root.searching ? 1 : 0
+                        visible: opacity > 0
+                        Behavior on opacity { Anim { kind: "effects" } }
                         anchors { fill: parent; leftMargin: 18; rightMargin: 8 }
                         spacing: 10
                         Icon { name: root.searching ? "search" : "folder"; size: 19; color: Theme.textDim }
@@ -510,13 +516,27 @@ FocusScope {
             }
 
             // ---- tabs ----
+            // The active tab's glass pill: one pill that glides between tabs
+            Glass {
+                readonly property Item at: { void root.tabs.length; return tabRepeater.itemAt(root.tabIndex); }
+                visible: at !== null
+                backdrop: view
+                tint: Theme.chromeStrong
+                x: tabStrip.x + (at ? at.x : 0)
+                y: tabStrip.y
+                width: at ? at.width : 0
+                height: 44
+                Behavior on x { Anim { kind: "fastSpatial" } }
+            }
             Row {
                 id: tabStrip
                 anchors { left: parent.left; top: toolbar.bottom; leftMargin: 12; topMargin: 10 }
                 spacing: 6
                 Repeater {
+                    id: tabRepeater
                     model: root.tabs
                     delegate: MouseArea {
+                        id: tabItem
                         required property var modelData
                         required property int index
                         readonly property bool on: index === root.tabIndex
@@ -526,12 +546,9 @@ FocusScope {
                         acceptedButtons: Qt.LeftButton | Qt.MiddleButton
                         cursorShape: Qt.PointingHandCursor
                         onClicked: (e) => e.button === Qt.MiddleButton ? root.closeTab(index) : root.tabIndex = index
-                        Glass {
-                            anchors.fill: parent
-                            backdrop: view
-                            visible: parent.on
-                            tint: Theme.chromeStrong
-                        }
+                        transformOrigin: Item.Left
+                        Component.onCompleted: if (Theme.animate && root.tabs.length > 1) { scale = 0.8; grow.start(); }
+                        Anim { id: grow; target: tabItem; property: "scale"; to: 1; kind: "fastSpatial" }
                         Rectangle { anchors.fill: parent; radius: 22; visible: !parent.on && parent.containsMouse; color: Theme.hover }
                         Row {
                             id: tabRow
@@ -622,8 +639,10 @@ FocusScope {
                 tint: error ? Theme.alpha(Theme.surfaceHighest, 0.95) : Theme.menu
                 opacity: 0
                 visible: opacity > 0
-                Behavior on opacity { NumberAnimation { duration: 160 } }
-                function show(t, u, err) { text = t; undoable = u; error = err; opacity = 1; hideTimer.restart(); }
+                Behavior on opacity { Anim { kind: "effects" } }
+                transform: Translate { id: toastLift }
+                Anim { id: toastRise; target: toastLift; property: "y"; from: 16; to: 0; kind: "enter" }
+                function show(t, u, err) { text = t; undoable = u; error = err; opacity = 1; hideTimer.restart(); toastRise.restart(); }
                 Timer { id: hideTimer; interval: 4500; onTriggered: toast.opacity = 0 }
                 RowLayout {
                     id: toastRow
@@ -646,7 +665,12 @@ FocusScope {
         }
 
         InfoPanel {
-            visible: root.infoOpen
+            id: infoPanel
+            property real reveal: root.infoOpen ? 1 : 0
+            Behavior on reveal { Anim { kind: "spatial" } }
+            visible: reveal > 0
+            opacity: Math.min(1, reveal)
+            transform: Translate { x: (1 - Math.min(1, infoPanel.reveal)) * 40 }
             Layout.fillHeight: true
             tab: root.tab
             onOpenItem: (it) => root.activate(it)
@@ -740,6 +764,7 @@ FocusScope {
         function rename(): void { root.startRename(); }
         function toast(text: string): void { Fs.toast(text, true); }
         function zoom(z: real): void { root.zoom = z; }
+        function menuAt(xy: string): void { const p = xy.split(","); root.backgroundMenu(Number(p[0]), Number(p[1])); }
     }
 
     // ---- menu overlay ----
@@ -755,6 +780,7 @@ FocusScope {
         x: Math.max(8, Math.min(root.menuX, root.width - 300 - 8 - (item && item.subIndex >= 0 ? 258 : 0)))
         y: Math.max(8, Math.min(root.menuY, root.height - (item ? item.height : 0) - 8))
         sourceComponent: Menu {
+            origin: Qt.point(Math.max(0, Math.min(root.menuX - menuLoader.x, 300)), Math.max(0, root.menuY - menuLoader.y))
             quick: root.menuQuick
             entries: root.menuEntries
             onDone: { root.menuOpen = false; view.forceActiveFocus(); }

@@ -8,6 +8,8 @@ Rectangle {
     property bool rail: false
     signal open(string path)
     signal openDolphin(string path)
+    property Item activeRow: null
+    onActivePlaceChanged: if (activePlace === "") activeRow = null
 
     implicitWidth: rail ? 72 : 248
     radius: Theme.rPanel
@@ -40,6 +42,20 @@ Rectangle {
         clip: true
         boundsBehavior: Flickable.StopAtBounds
 
+        Item {
+            width: parent.width
+            implicitHeight: col.implicitHeight
+            // The active place's pill: one rectangle that glides between rows instead of each row drawing its own
+            Rectangle {
+                visible: root.activeRow !== null && root.activeRow.visible
+                x: (root.activeRow ? root.activeRow.x : 0) + (root.rail ? 4 : 0)
+                y: root.activeRow ? root.activeRow.y : 0
+                width: (root.activeRow ? root.activeRow.width : 0) - (root.rail ? 8 : 0)
+                height: root.activeRow ? root.activeRow.height : 0
+                radius: height / 2
+                color: Theme.primaryContainer
+                Behavior on y { Anim { kind: "fastSpatial" } }
+            }
         ColumnLayout {
             id: col
             width: parent.width
@@ -119,6 +135,7 @@ Rectangle {
                 }
             }
         }
+        }
     }
 
     component SectionLabel: Text {
@@ -129,6 +146,8 @@ Rectangle {
 
     component PlaceRow: MouseArea {
         id: row
+        onActiveChanged: if (active) root.activeRow = row
+        Component.onCompleted: if (active) root.activeRow = row
         property string icon
         property string label
         property int badge: 0
@@ -143,7 +162,7 @@ Rectangle {
             anchors.fill: parent
             anchors.leftMargin: row.rail ? 4 : 0; anchors.rightMargin: row.rail ? 4 : 0
             radius: height / 2
-            color: row.active ? Theme.primaryContainer : (row.containsMouse ? Theme.hover : "transparent")
+            color: !row.active && row.containsMouse ? Theme.hover : "transparent"
         }
         RowLayout {
             anchors.fill: parent

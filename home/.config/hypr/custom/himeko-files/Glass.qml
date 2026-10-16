@@ -39,6 +39,7 @@ Item {
         anchors.fill: parent
         radius: root.radius
         color: root.tint
+        Behavior on color { ColorAnimation { duration: Theme.dur("effects") } }
     }
     Sheen { radius: root.radius; edge: root.border ? 0.12 : 0 }
 }

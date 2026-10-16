@@ -10,6 +10,28 @@ Rectangle {
     property int current: -1
     property Item parentMenu: null
     signal done()
+    property point origin: Qt.point(0, 0)   // where it pops out from, in the menu's coordinates
+    property real pop: 1
+    transform: [
+        Scale { origin.x: root.origin.x; origin.y: root.origin.y; xScale: root.pop; yScale: root.pop },
+        Translate { id: slide }
+    ]
+    // Top-level menus pop from the pointer; submenus (parentMenu set before completion) slide in 8 px
+    Component.onCompleted: {
+        if (!Theme.animate) return;
+        opacity = 0;
+        if (parentMenu) { slide.x = -8; subIn.start(); } else { pop = 0.92; popIn.start(); }
+    }
+    ParallelAnimation {
+        id: popIn
+        Anim { target: root; property: "pop"; to: 1; kind: "fastSpatial" }
+        Anim { target: root; property: "opacity"; to: 1; kind: "effects" }
+    }
+    ParallelAnimation {
+        id: subIn
+        Anim { target: slide; property: "x"; to: 0; kind: "fastSpatial" }
+        Anim { target: root; property: "opacity"; to: 1; kind: "effects" }
+    }
 
     width: 300
     height: col.implicitHeight + 16
@@ -49,6 +71,8 @@ Rectangle {
         const s = entries[i].sub;
         if (typeof s === "function") { subEntries = [{ label: "Loading…", disabled: true }]; s(list => subEntries = list); }
         else subEntries = s;
+        // By URL (a component can't contain itself); initial properties are set before onCompleted runs
+        subLoader.setSource("Menu.qml", { parentMenu: root, width: 250 });
         subLoader.active = true;
     }
 
@@ -152,11 +176,8 @@ Rectangle {
         active: false
         x: root.width + 8
         y: Math.max(0, 8 + (root.quick.length ? 64 : 0) + root.subIndex * 46 - 8)
-        source: "Menu.qml" // by URL: a component can't contain itself directly
         onLoaded: {
-            item.width = 250;
             item.entries = Qt.binding(() => root.subEntries);
-            item.parentMenu = root;
             item.done.connect(root.done);
         }
     }
