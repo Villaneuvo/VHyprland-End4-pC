@@ -9,7 +9,7 @@
 # The test window is titled "Files (test) — …": only that window is ever closed or captured, never yours.
 set -eu
 here=$(dirname "$(readlink -f "$0")")
-app=$HOME/.config/hypr/custom/himeko-files
+app=${APP_DIR:-$HOME/.config/hypr/custom/himeko-files}   # APP_DIR: run another copy (e.g. an old commit)
 out=$1; folder=${2:-$HOME}
 mkdir -p "$(dirname "$out")"
 shift; [ $# -gt 0 ] && shift

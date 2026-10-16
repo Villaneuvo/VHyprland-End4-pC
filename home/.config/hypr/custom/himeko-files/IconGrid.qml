@@ -18,9 +18,14 @@ ListView {
     property real pad: 24          // side padding; ListView's left/rightMargin don't apply to the header the same way
     readonly property real gap: 14
     readonly property real usable: width - 2 * pad
-    readonly property int folderCols: Math.max(1, Math.floor((usable + gap) / (230 + gap)))
+    // Column counts follow the width 100 ms after it stops changing, so a resize or the info panel sliding in
+    // doesn't rebuild every row each frame; tiles just stretch meanwhile.
+    property real columnsWidth: usable
+    Timer { id: settle; interval: 100; onTriggered: root.columnsWidth = root.usable }
+    onUsableChanged: settle.restart()
+    readonly property int folderCols: Math.max(1, Math.floor((columnsWidth + gap) / (230 + gap)))
     readonly property real tileW: 150 * zoom
-    readonly property int fileCols: Math.max(1, Math.floor((usable + gap) / (tileW + gap)))
+    readonly property int fileCols: Math.max(1, Math.floor((columnsWidth + gap) / (tileW + gap)))
     readonly property real thumbH: (usable - gap * (fileCols - 1)) / fileCols * 0.68
 
     function chunk(list, n) { const out = []; for (let i = 0; i < list.length; i += n) out.push(list.slice(i, i + n)); return out; }

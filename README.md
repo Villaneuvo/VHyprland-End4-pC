@@ -108,6 +108,8 @@ straight from end4-pC (it follows the wallpaper), the Material Symbols icon font
   (`Ctrl+Z` or the toast's Undo). It never overwrites: clashing names become "name (2)"
 - **Keys**: `Ctrl+1/2` icons/details, `Ctrl+T/W` tabs, `F2` rename, `Del` trash, `Shift+Del` delete,
   `Ctrl+Shift+N` new folder, `F11` info panel, `F9` sidebar rail, `Ctrl+±` zoom, arrows/Shift to select
+- **Motion**: moves like the shell (end4-pC's curves); turns off with GNOME's "animations" switch or
+  Hyprland's `animations:enabled`. Folder tiles show item counts; dates read like Nautilus ("3 days ago")
 
 Not there yet (use **Show in Dolphin** from its menus): drag and drop, split view, network places, tags.
 File operations live in `ops.sh`; `ops.sh selftest` checks them (naming, copy/move, zip, trash and restore).

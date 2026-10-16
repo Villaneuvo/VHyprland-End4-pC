@@ -36,7 +36,8 @@ Item {
         asynchronous: true
         cache: true
         fillMode: Image.PreserveAspectCrop
-        sourceSize.width: 256
+        // Decode at the size shown, in two buckets so zooming doesn't reload constantly (cache files stay 256 px)
+        sourceSize.width: root.width <= 128 ? 128 : 256
         source: root.previewable ? "file://" + Fs.thumbPath(root.item.path) : ""
         onStatusChanged: if (status === Image.Error && root.previewable) Fs.requestThumb(root.item.path)
         layer.enabled: true
