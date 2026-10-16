@@ -345,6 +345,22 @@ FocusScope {
                 Anim { target: view; property: "opacity"; from: 0; to: 1; kind: "effects"; duration: Theme.animate ? 250 : 0 }
             }
 
+            // Scroll edge effect (iOS): once content scrolls under the toolbar and tabs, it fades out first.
+            // Opacity follows the scroll offset: 0 at rest, so the large title is never dimmed.
+            Rectangle {
+                readonly property var list: root.tab && root.tab.viewMode === "details" ? detailsView : iconView
+                readonly property real chromeBottom: tabStrip.y + tabStrip.height
+                anchors { left: parent.left; right: parent.right; top: parent.top }
+                height: chromeBottom + 60
+                // At rest contentY = originY - topMargin (the list header makes originY negative)
+                opacity: Math.max(0, Math.min(1, (list.contentY - list.originY + list.topMargin) / 40))
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: Theme.alpha(Theme.surface, 0.95) }
+                    GradientStop { position: 0.68; color: Theme.alpha(Theme.surface, 0.85) }
+                    GradientStop { position: 1.0; color: Theme.alpha(Theme.surface, 0) }
+                }
+            }
+
             // ---- floating toolbar (glass over the content) ----
             RowLayout {
                 id: toolbar
@@ -764,6 +780,7 @@ FocusScope {
         function rename(): void { root.startRename(); }
         function toast(text: string): void { Fs.toast(text, true); }
         function zoom(z: real): void { root.zoom = z; }
+        function scroll(px: int): void { const l = root.tab.viewMode === "details" ? detailsView : iconView; l.contentY = l.originY - l.topMargin + px; }
         function menuAt(xy: string): void { const p = xy.split(","); root.backgroundMenu(Number(p[0]), Number(p[1])); }
     }
 
