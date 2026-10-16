@@ -61,4 +61,26 @@ Singleton {
     readonly property int rThumb: 16
     readonly property int rRow: 14
     readonly property int target: 44
+
+    // ---- motion: end4-pC's curves (Appearance.qml), so the app moves like the shell ----
+    readonly property var curve: ({
+        fastSpatial: [0.42, 1.67, 0.21, 0.90, 1, 1],   // overshoot, for things that pop
+        spatial: [0.38, 1.21, 0.22, 1.00, 1, 1],
+        effects: [0.34, 0.80, 0.34, 1.00, 1, 1],       // fades and color
+        enter: [0.05, 0.7, 0.1, 1, 1, 1]
+    })
+    readonly property var duration: ({ fastSpatial: 350, spatial: 500, effects: 200, enter: 400 })
+    // Off when GNOME's "enable-animations" or Hyprland's animations are off; HF_ANIMATE=0 forces it (tests)
+    property bool animate: Quickshell.env("HF_ANIMATE") !== "0"
+    function dur(kind) { return animate ? duration[kind] : 0; }
+    Process {
+        running: Quickshell.env("HF_ANIMATE") !== "0"
+        command: ["bash", "-c", "gsettings get org.gnome.desktop.interface enable-animations; hyprctl getoption animations:enabled -j | jq '.bool // .int'"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const l = text.trim().split("\n");
+                root.animate = l[0] !== "false" && l[1] !== "false" && l[1] !== "0";
+            }
+        }
+    }
 }

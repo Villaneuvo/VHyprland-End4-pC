@@ -37,5 +37,16 @@ ShellRoot {
         check("label: empty", Fs.countLabel(0), "Empty");
         check("label: one", Fs.countLabel(1), "1 item");
         check("label: many", Fs.countLabel(24), "24 items");
+
+        // ---- motion tokens (Theme) ----
+        check("curve: fastSpatial", Theme.curve.fastSpatial, [0.42, 1.67, 0.21, 0.90, 1, 1]);
+        check("curve: enter", Theme.curve.enter, [0.05, 0.7, 0.1, 1, 1, 1]);
+        const was = Theme.animate;
+        Theme.animate = true;
+        check("dur: effects", Theme.dur("effects"), 200);
+        check("dur: spatial", Theme.dur("spatial"), 500);
+        Theme.animate = false;
+        check("dur: off", Theme.dur("fastSpatial"), 0);
+        Theme.animate = was;
     }
 }
