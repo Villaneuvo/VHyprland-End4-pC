@@ -75,13 +75,23 @@ Singleton {
         do { b /= 1024; i++; } while (b >= 1024 && i < u.length - 1);
         return (b < 10 ? b.toFixed(1) : Math.round(b)) + " " + u[i];
     }
-    function date(d) {
-        const now = new Date(), day = 86400000;
-        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-        const t = d.getTime(), hm = Qt.formatTime(d, "hh:mm");
-        if (t >= start) return "Today, " + hm;
-        if (t >= start - day) return "Yesterday, " + hm;
-        return Qt.formatDate(d, d.getFullYear() === now.getFullYear() ? "d MMM" : "d MMM yyyy");
+    // Nautilus-style: "Just now", "5 min ago", "Today, 14:39", "Yesterday, 16:28", "3 days ago",
+    // "12 Oct", "12 Oct 2025". `now` is for the self-check.
+    function date(d, now) {
+        now = now ?? new Date();
+        const t = d.getTime(), diff = now.getTime() - t, min = 60000, day = 86400000;
+        const absolute = () => Qt.formatDate(d, d.getFullYear() === now.getFullYear() ? "d MMM" : "d MMM yyyy");
+        if (diff < 0) return absolute();
+        if (diff < min) return "Just now";
+        if (diff < 60 * min) return Math.floor(diff / min) + " min ago";
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        const thatDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+        const days = Math.round((today - thatDay) / day);   // calendar days, safe across DST
+        const hm = Qt.formatTime(d, "hh:mm");
+        if (days === 0) return "Today, " + hm;
+        if (days === 1) return "Yesterday, " + hm;
+        if (days < 7) return days + " days ago";
+        return absolute();
     }
     readonly property var kinds: ({
         image: { icon: "image", label: "Image", ext: ["jpg", "jpeg", "png", "gif", "webp", "avif", "bmp", "svg", "heic", "jxl", "tif", "tiff", "ico"] },
