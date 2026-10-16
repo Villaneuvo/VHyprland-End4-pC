@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Dev helper: memory and idle CPU of the running Himeko Files window.   perf.sh [SECONDS]
+# Dev helper: memory and idle CPU of the Himeko Files test window (capture.sh's "Files (test)").   perf.sh [SECONDS]
 set -eu
-pid=$(hyprctl clients -j | jq -r '[.[] | select(.title|startswith("Files — "))][0].pid')
-[ "$pid" != null ] || { echo "Himeko Files is not running" >&2; exit 1; }
+pid=$(hyprctl clients -j | jq -r '[.[] | select(.title|startswith("Files (test) — "))][0].pid')
+[ "$pid" != null ] || { echo "no Himeko Files test window (start one with capture.sh)" >&2; exit 1; }
 t=${1:-10}; hz=$(getconf CLK_TCK)
 ticks() { awk '{print $14 + $15}' "/proc/$pid/stat"; }
 a=$(ticks); sleep "$t"; b=$(ticks)

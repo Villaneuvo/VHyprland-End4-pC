@@ -6,7 +6,8 @@ import Quickshell
 ShellRoot {
     FloatingWindow {
         id: win
-        title: "Files — " + browser.title
+        // HF_TITLE lets dev tools tell their test window apart from yours ("Files (test)")
+        title: (Quickshell.env("HF_TITLE") || "Files") + " — " + browser.title
         color: "transparent"
         implicitWidth: 1248
         implicitHeight: 788

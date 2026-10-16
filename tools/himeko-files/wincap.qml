@@ -19,7 +19,9 @@ ShellRoot {
         anchors { top: true; left: true }
         ScreencopyView {
             id: view
-            width: 2000; height: 1300
+            // Match the window: a fixed size would letterbox it and grabToImage would squeeze the result
+            width: sourceSize.width > 0 ? sourceSize.width : 2000
+            height: sourceSize.height > 0 ? sourceSize.height : 1300
             live: true
             captureSource: root.target
             onHasContentChanged: if (hasContent) shot.start()

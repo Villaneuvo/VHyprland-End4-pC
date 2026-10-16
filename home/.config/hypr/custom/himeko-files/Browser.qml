@@ -268,6 +268,7 @@ FocusScope {
 
         Rectangle {
             id: main
+            readonly property bool tight: width < 640
             Layout.fillWidth: true
             Layout.fillHeight: true
             radius: Theme.rPanel
@@ -401,6 +402,28 @@ FocusScope {
                         contentWidth: crumbRow.implicitWidth
                         clip: true
                         flickableDirection: Flickable.HorizontalFlick
+                        readonly property var parts: {
+                            if (!root.tab) return [];
+                            const p = root.tab.path, out = [];
+                            if (p.startsWith(Fs.home)) {
+                                out.push({ label: "Home", path: Fs.home, icon: "home" });
+                                let acc = Fs.home;
+                                for (const s of p.slice(Fs.home.length).split("/").filter(x => x)) { acc += "/" + s; out.push({ label: s, path: acc }); }
+                            } else {
+                                out.push({ label: "", path: "/", icon: "hard_drive" });
+                                let acc = "";
+                                for (const s of p.split("/").filter(x => x)) { acc += "/" + s; out.push({ label: s, path: acc }); }
+                            }
+                            return out;
+                        }
+                        // Measured with an invisible row of plain texts; collapse when the real row wouldn't fit
+                        readonly property bool collapse: parts.length > 3 && measure.implicitWidth > width
+                        Row {
+                            id: measure
+                            visible: false
+                            spacing: 22
+                            Repeater { model: crumbs.parts; delegate: Text { required property var modelData; text: modelData.label || "XX"; font.family: Theme.font; font.pixelSize: 14; font.weight: 600 } }
+                        }
                         function toEnd() { contentX = Math.max(0, contentWidth - width); }
                         onContentWidthChanged: toEnd()
                         onWidthChanged: toEnd()
@@ -413,20 +436,10 @@ FocusScope {
                             height: parent.height
                             spacing: 2
                             Repeater {
-                                model: {
-                                    if (!root.tab) return [];
-                                    const p = root.tab.path, parts = [];
-                                    if (p.startsWith(Fs.home)) {
-                                        parts.push({ label: "Home", path: Fs.home, icon: "home" });
-                                        let acc = Fs.home;
-                                        for (const s of p.slice(Fs.home.length).split("/").filter(x => x)) { acc += "/" + s; parts.push({ label: s, path: acc }); }
-                                    } else {
-                                        parts.push({ label: "", path: "/", icon: "hard_drive" });
-                                        let acc = "";
-                                        for (const s of p.split("/").filter(x => x)) { acc += "/" + s; parts.push({ label: s, path: acc }); }
-                                    }
-                                    return parts;
-                                }
+                                // Collapsed: first, "…", last two; in a very narrow window just "…" and the current folder
+                                model: !crumbs.collapse ? crumbs.parts
+                                    : main.tight ? [{ label: "…", path: "", ellipsis: true, hidden: crumbs.parts.slice(0, -1) }, crumbs.parts[crumbs.parts.length - 1]]
+                                    : [crumbs.parts[0], { label: "…", path: "", ellipsis: true, hidden: crumbs.parts.slice(1, -2) }].concat(crumbs.parts.slice(-2))
                                 delegate: Row {
                                     required property var modelData
                                     required property int index
@@ -439,7 +452,13 @@ FocusScope {
                                         implicitWidth: crumbContent.implicitWidth + 20; implicitHeight: 36
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: last ? root.editingPath = true : root.tab.go(modelData.path)
+                                        onClicked: {
+                                            if (modelData.ellipsis) {
+                                                const p = mapToItem(root, 0, height + 6);
+                                                root.showMenu(p.x, p.y, [], modelData.hidden.slice().reverse().map(c => ({ icon: c.icon ?? "folder", label: c.label || "/", action: () => root.tab.go(c.path) })));
+                                            } else if (last) root.editingPath = true;
+                                            else root.tab.go(modelData.path);
+                                        }
                                         Rectangle { anchors.fill: parent; radius: 18; color: parent.last ? Theme.alpha(Theme.text, 0.10) : (parent.containsMouse ? Theme.hover : "transparent") }
                                         Row {
                                             id: crumbContent
@@ -448,6 +467,9 @@ FocusScope {
                                             Icon { visible: !!modelData.icon; name: modelData.icon ?? ""; size: 18; color: Theme.textDim; anchors.verticalCenter: parent.verticalCenter }
                                             Text {
                                                 visible: modelData.label !== ""
+                                                // the current folder's name ellipsizes in a very narrow window instead of being cut
+                                                width: Math.min(implicitWidth, Math.max(40, crumbs.width - 70))
+                                                elide: Text.ElideMiddle
                                                 text: modelData.label
                                                 color: parent.parent.last ? Theme.text : Theme.textDim
                                                 font.family: Theme.font; font.pixelSize: 14; font.weight: parent.parent.last ? 600 : 450
@@ -499,6 +521,7 @@ FocusScope {
                 }
 
                 Glass {
+                    visible: !main.tight
                     backdrop: view
                     implicitWidth: modeRow.implicitWidth + 8; implicitHeight: 52
                     Row {
@@ -507,6 +530,17 @@ FocusScope {
                         spacing: 2
                         IconButton { icon: "grid_view"; tip: "Icons (Ctrl+1)"; active: root.tab && root.tab.viewMode === "icons"; onClicked: root.tab.viewMode = "icons" }
                         IconButton { icon: "view_list"; tip: "Details (Ctrl+2)"; active: root.tab && root.tab.viewMode === "details"; onClicked: root.tab.viewMode = "details" }
+                    }
+                }
+                Glass {
+                    visible: main.tight
+                    backdrop: view
+                    implicitWidth: 52; implicitHeight: 52
+                    IconButton {
+                        anchors.centerIn: parent
+                        icon: root.tab && root.tab.viewMode === "icons" ? "grid_view" : "view_list"
+                        tip: root.tab && root.tab.viewMode === "icons" ? "Switch to details (Ctrl+2)" : "Switch to icons (Ctrl+1)"
+                        onClicked: root.tab.viewMode = root.tab.viewMode === "icons" ? "details" : "icons"
                     }
                 }
                 Glass {
@@ -697,6 +731,8 @@ FocusScope {
     Component {
         id: headerComp
         Item {
+            id: header
+            readonly property bool narrow: width < 760
             width: parent ? parent.width : 0
             implicitHeight: 92
             RowLayout {
@@ -706,15 +742,28 @@ FocusScope {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 2
-                    Row {
+                    RowLayout {
+                        Layout.fillWidth: true
                         spacing: 6
                         Text {
+                            // Shrinks with an ellipsis instead of pushing the filter/sort buttons out of the window
+                            // Grows to its full width (+2 px rounding slack, or it ellipsizes at full width) and is the
+                            // one thing that shrinks when the window is narrow: layouts only shrink fillWidth items
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: implicitWidth + 2
+                            Layout.maximumWidth: implicitWidth + 2
+                            Layout.minimumWidth: 0
+                            elide: Text.ElideRight
                             text: root.tab ? (root.tab.inTrash ? "Trash" : root.tab.name) : ""
                             color: Theme.text; font.family: Theme.font; font.pixelSize: 34; font.weight: 700; font.letterSpacing: -0.4
                         }
-                        Icon { name: "star"; filled: true; size: 20; color: Theme.tertiary; rotation: 12; anchors.top: parent.top }
+                        Icon { name: "star"; filled: true; size: 20; color: Theme.tertiary; rotation: 12; Layout.alignment: Qt.AlignTop }
+                        Item { Layout.fillWidth: true }
                     }
                     Text {
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        elide: Text.ElideRight
                         text: root.tab ? (root.tab.query ? root.tab.items.length + " results for “" + root.tab.query + "”"
                                          : root.tab.folders.length + (root.tab.folders.length === 1 ? " folder · " : " folders · ") + root.tab.files.length + (root.tab.files.length === 1 ? " file" : " files")) : ""
                         color: Theme.textDim; font.family: Theme.font; font.pixelSize: 13
@@ -722,6 +771,7 @@ FocusScope {
                 }
                 Item { Layout.fillWidth: true }
                 Rectangle {
+                    visible: !header.narrow
                     implicitWidth: chips.implicitWidth + 8; implicitHeight: 44; radius: 22
                     color: Theme.surfaceMid
                     Row {
@@ -743,10 +793,22 @@ FocusScope {
                     }
                 }
                 IconButton {
+                    id: filterBtn
+                    visible: header.narrow
+                    implicitHeight: 44
+                    icon: "filter_list"; tip: "Filter"
+                    active: root.tab && root.tab.filter !== "all"
+                    onClicked: {
+                        const p = filterBtn.mapToItem(root, -150, 48);
+                        const f = [["all", "All"], ["image", "Images"], ["video", "Videos"], ["doc", "Docs"]];
+                        root.showMenu(p.x, p.y, [], f.map(x => ({ icon: root.tab.filter === x[0] ? "check" : "", label: x[1], action: () => root.tab.filter = x[0] })));
+                    }
+                }
+                IconButton {
                     id: sortBtn
                     implicitHeight: 44
                     icon: root.tab && root.tab.sortDesc ? "arrow_downward" : "arrow_upward"
-                    label: root.tab ? ({ name: "Name", modified: "Modified", size: "Size", kind: "Kind" })[root.tab.sortKey] : ""
+                    label: !header.narrow && root.tab ? ({ name: "Name", modified: "Modified", size: "Size", kind: "Kind" })[root.tab.sortKey] : ""
                     bg: containsMouse ? Theme.hover : "transparent"
                     Rectangle { anchors.fill: parent; radius: height / 2; color: "transparent"; border.width: 1; border.color: Theme.outlineVariant }
                     onClicked: {
