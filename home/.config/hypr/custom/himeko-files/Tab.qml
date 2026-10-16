@@ -18,6 +18,9 @@ QtObject {
     property string anchor: ""             // shift-click range start
     property var counts: null              // subfolder path -> item count; null until counted
     property string countedPath: ""
+    property int direction: 1              // 1 = into/forward, -1 = back/up: which way the content slides
+    property real loadedAt: 0              // when the current folder was first listed (tiles animate in after it)
+    property string loadedPath: ""
     function countOf(p) { return counts ? (counts[p] ?? 0) : undefined; }
 
     readonly property string name: path === "/" ? "/" : path === Fs.home ? "Home" : path.slice(path.lastIndexOf("/") + 1)
@@ -42,6 +45,7 @@ QtObject {
             });
         }
         all = list;
+        if (loadedPath !== path) { loadedPath = path; loadedAt = Date.now(); }
         // Count the subfolders once per visit (F5 resets countedPath); ignore answers for a folder we left
         if (countedPath !== path && list.some(it => it.isDir)) {
             const asked = path;
@@ -80,17 +84,18 @@ QtObject {
     readonly property real selectedSize: selectedItems.reduce((s, it) => s + (it.isDir ? 0 : it.size), 0)
     readonly property var focusItem: items.find(it => it.path === current) ?? null
 
-    function go(p, record) {
+    function go(p, record, dir) {
         if (!p || p === path) return;
+        direction = dir ?? 1;
         if (record !== false) { back = back.concat([path]); forward = []; }
         path = p.length > 1 && p.endsWith("/") ? p.slice(0, -1) : p;
         selection = ({}); current = ""; anchor = ""; query = "";
         all = [];
         counts = null; countedPath = "";
     }
-    function goBack() { if (back.length) { forward = [path].concat(forward); const p = back[back.length - 1]; back = back.slice(0, -1); go(p, false); } }
-    function goForward() { if (forward.length) { back = back.concat([path]); const p = forward[0]; forward = forward.slice(1); go(p, false); } }
-    function goUp() { if (path !== "/") go(path.slice(0, path.lastIndexOf("/")) || "/"); }
+    function goBack() { if (back.length) { forward = [path].concat(forward); const p = back[back.length - 1]; back = back.slice(0, -1); go(p, false, -1); } }
+    function goForward() { if (forward.length) { back = back.concat([path]); const p = forward[0]; forward = forward.slice(1); go(p, false, 1); } }
+    function goUp() { if (path !== "/") go(path.slice(0, path.lastIndexOf("/")) || "/", true, -1); }
 
     // Selection: plain click selects one, ctrl toggles, shift selects a range in the visible order
     function select(item, mods) {

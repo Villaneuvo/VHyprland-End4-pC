@@ -10,6 +10,8 @@ MouseArea {
     property bool wide: item.isDir
     property real thumbHeight: 104
     property bool renaming: false
+    property int appearOrder: -1          // position among the first tiles of a freshly opened folder
+    property real fade: 1
     readonly property bool selected: tab.selection[item.path] === true
     readonly property bool focused: tab.current === item.path
     readonly property bool cut: Fs.clip.mode === "move" && Fs.clip.paths.indexOf(item.path) >= 0
@@ -23,7 +25,24 @@ MouseArea {
     hoverEnabled: true
     acceptedButtons: Qt.LeftButton | Qt.RightButton
     cursorShape: Qt.PointingHandCursor
-    opacity: cut ? 0.5 : 1
+    opacity: (cut ? 0.5 : 1) * fade
+    scale: containsMouse ? 1.02 : 1
+    Behavior on scale { Anim { kind: "effects" } }
+    transform: Translate { id: lift }
+    // The first 24 tiles of a folder that just opened fade in and rise 8 px, 15 ms apart
+    Component.onCompleted: {
+        if (!Theme.animate || appearOrder < 0 || appearOrder >= 24 || Date.now() - tab.loadedAt > 600) return;
+        fade = 0; lift.y = 8;
+        appear.start();
+    }
+    SequentialAnimation {
+        id: appear
+        PauseAnimation { duration: root.appearOrder * 15 }
+        ParallelAnimation {
+            Anim { target: root; property: "fade"; to: 1; kind: "enter" }
+            Anim { target: lift; property: "y"; to: 0; kind: "enter" }
+        }
+    }
 
     onPressed: (e) => {
         if (e.button === Qt.RightButton) {
@@ -80,12 +99,16 @@ MouseArea {
                 anchors.fill: parent; anchors.margins: -3
                 radius: Theme.rThumb + 3
                 color: "transparent"
-                border.width: root.selected ? 3 : 0
+                border.width: 3
+                opacity: root.selected ? 1 : 0
+                Behavior on opacity { Anim { kind: "effects" } }
                 border.color: Theme.primary
             }
             Thumb { anchors.fill: parent; item: root.item }
             Item {
-                visible: root.selected
+                scale: root.selected ? 1 : 0
+                visible: scale > 0
+                Behavior on scale { Anim { kind: "fastSpatial" } }
                 anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 6
                 width: 28; height: 28
                 Shape { anchors.fill: parent; kind: "cookie"; color: Theme.primary }

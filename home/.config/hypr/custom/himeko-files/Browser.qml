@@ -85,8 +85,9 @@ FocusScope {
     // Leaving a folder closes whatever was open on it
     Connections {
         target: root.tab
-        function onPathChanged() { root.menuOpen = false; root.renamingPath = ""; root.editingPath = false; root.searching = false; }
+        function onPathChanged() { root.menuOpen = false; root.renamingPath = ""; root.editingPath = false; root.searching = false; navAnim.dir = root.tab.direction; navAnim.restart(); }
     }
+    onTabIndexChanged: { navAnim.dir = 0; navAnim.restart(); }
     Connections {
         target: Fs
         function onToast(text, undoable) { toast.show(text, undoable && Fs.undoAction !== null, false); }
@@ -279,11 +280,14 @@ FocusScope {
                 anchors.fill: parent
                 focus: true
                 Keys.forwardTo: [root]
+                transform: Translate { id: viewShift }
 
                 IconGrid {
                     id: iconView
                     anchors.fill: parent
-                    visible: root.tab && root.tab.viewMode === "icons"
+                    opacity: root.tab && root.tab.viewMode === "icons" ? 1 : 0
+                    visible: opacity > 0
+                    Behavior on opacity { Anim { kind: "effects" } }
                     tab: root.tab
                     zoom: root.zoom
                     topMargin: 134; pad: 24
@@ -298,7 +302,9 @@ FocusScope {
                 DetailsList {
                     id: detailsView
                     anchors.fill: parent
-                    visible: root.tab && root.tab.viewMode === "details"
+                    opacity: root.tab && root.tab.viewMode === "details" ? 1 : 0
+                    visible: opacity > 0
+                    Behavior on opacity { Anim { kind: "effects" } }
                     tab: root.tab
                     topMargin: 134; pad: 24
                     headerComponent: headerComp
@@ -329,6 +335,14 @@ FocusScope {
                         color: Theme.textDim; font.family: Theme.font; font.pixelSize: 15
                     }
                 }
+            }
+
+            // Opening a folder: the content fades in while sliding 12 px from the side it came from
+            ParallelAnimation {
+                id: navAnim
+                property int dir: 1
+                Anim { target: viewShift; property: "x"; from: 12 * navAnim.dir; to: 0; kind: "effects"; duration: Theme.animate ? 250 : 0 }
+                Anim { target: view; property: "opacity"; from: 0; to: 1; kind: "effects"; duration: Theme.animate ? 250 : 0 }
             }
 
             // ---- floating toolbar (glass over the content) ----

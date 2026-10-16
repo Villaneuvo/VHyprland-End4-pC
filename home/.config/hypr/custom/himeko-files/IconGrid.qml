@@ -68,6 +68,7 @@ ListView {
     delegate: Item {
         id: row
         required property var modelData
+        required property int index
         width: root.width // ListView pins delegates at x = 0: pad inside instead
         height: modelData.kind === "label" ? 26 : grid.implicitHeight
         Text {
@@ -90,6 +91,8 @@ ListView {
                 model: row.modelData.kind === "label" ? [] : row.modelData.items
                 delegate: ItemTile {
                     required property var modelData
+                    required property int index
+                    appearOrder: row.index * grid.columns + index
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     item: modelData

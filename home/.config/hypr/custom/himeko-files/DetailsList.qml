@@ -80,6 +80,8 @@ ListView {
     delegate: MouseArea {
         id: row
         required property var modelData
+        required property int index
+        property real fade: 1
         readonly property bool selected: root.tab.selection[modelData.path] === true
         readonly property bool cut: Fs.clip.mode === "move" && Fs.clip.paths.indexOf(modelData.path) >= 0
         readonly property string kind: Fs.kindOf(modelData)
@@ -87,7 +89,21 @@ ListView {
         height: 48
         hoverEnabled: true
         acceptedButtons: Qt.LeftButton | Qt.RightButton
-        opacity: cut ? 0.5 : 1
+        opacity: (cut ? 0.5 : 1) * fade
+        transform: Translate { id: rowLift }
+        Component.onCompleted: {
+            if (!Theme.animate || index >= 24 || Date.now() - root.tab.loadedAt > 600) return;
+            fade = 0; rowLift.y = 8;
+            rowAppear.start();
+        }
+        SequentialAnimation {
+            id: rowAppear
+            PauseAnimation { duration: row.index * 15 }
+            ParallelAnimation {
+                Anim { target: row; property: "fade"; to: 1; kind: "enter" }
+                Anim { target: rowLift; property: "y"; to: 0; kind: "enter" }
+            }
+        }
         onPressed: (e) => {
             if (e.button === Qt.RightButton) {
                 if (!selected) root.tab.select(modelData, 0);
@@ -137,7 +153,9 @@ ListView {
                     }
                 }
                 Item {
-                    visible: row.selected
+                    scale: row.selected ? 1 : 0
+                    visible: scale > 0
+                    Behavior on scale { Anim { kind: "fastSpatial" } }
                     implicitWidth: 20; implicitHeight: 20
                     Layout.rightMargin: 8
                     Shape { anchors.fill: parent; kind: "cookie"; color: Theme.primary }
