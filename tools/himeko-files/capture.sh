@@ -2,7 +2,7 @@
 # Dev helper: restart Himeko Files on an invisible headless output (HFTEST, far right of the layout so the cursor
 # can't reach it), drive it over IPC, and save a capture of its window. Windows on hidden workspaces get no
 # frames, so they can't be captured; a headless output renders without showing anything on your screens.
-# Remove the output when done:  hyprctl output remove HFTEST
+# Clean up when done: done.sh (closes the test window, then removes the output)
 #   capture.sh OUT.png [FOLDER] [-- "fn arg" ...]      e.g. capture.sh /tmp/a.png ~/Pictures -- "view details"
 # Env: WAIT (seconds for the app to start, default 3), SIZE="W H" (float the window at that size),
 #      HF_ANIMATE (passed to the app; 0 = animations off).

@@ -582,6 +582,10 @@ FocusScope {
                 id: tabStrip
                 anchors { left: parent.left; top: toolbar.bottom; leftMargin: 12; topMargin: 10 }
                 spacing: 6
+                // Names shrink to "…" once the tabs would run past the panel. Chrome per tab: active 76 px
+                // (dot, close), others 32, plus 6 px gaps and the 40 px "+".
+                readonly property real nameMax: Math.max(24, Math.min(240,
+                    (parent.width - 24 - 40 - 76 - 32 * (root.tabs.length - 1) - 6 * root.tabs.length) / root.tabs.length))
                 Repeater {
                     id: tabRepeater
                     model: root.tabs
@@ -608,6 +612,8 @@ FocusScope {
                             Rectangle { visible: on; width: 8; height: 8; radius: 4; color: Theme.primary; anchors.verticalCenter: parent.verticalCenter }
                             Text {
                                 text: modelData.name
+                                width: Math.min(implicitWidth, tabStrip.nameMax)
+                                elide: Text.ElideRight
                                 color: on ? Theme.text : Theme.textDim
                                 font.family: Theme.font; font.pixelSize: 13; font.weight: on ? 600 : 450
                                 anchors.verticalCenter: parent.verticalCenter
@@ -843,6 +849,8 @@ FocusScope {
         function toast(text: string): void { Fs.toast(text, true); }
         function zoom(z: real): void { root.zoom = z; }
         function scroll(px: int): void { const l = root.tab.viewMode === "details" ? detailsView : iconView; l.contentY = l.originY - l.topMargin + px; }
+        function scrollY(): int { const l = root.tab.viewMode === "details" ? detailsView : iconView; return Math.round(l.contentY - l.originY + l.topMargin); }
+        function newTab(path: string): void { root.newTab(path); }
         function menuAt(xy: string): void { const p = xy.split(","); root.backgroundMenu(Number(p[0]), Number(p[1])); }
     }
 

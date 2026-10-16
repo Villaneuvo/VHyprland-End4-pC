@@ -95,19 +95,26 @@ Singleton {
     }
 
     // ---- folder item counts: one `find` per folder visit counts every subfolder at once ----
-    function tallyCounts(text) {
+    // Subfolders find couldn't open ("find: '/a/it\'s': Permission denied") map to null: unknown, not empty.
+    function tallyCounts(text, errText) {
         const counts = {};
         for (const l of lines(text)) counts[l] = (counts[l] ?? 0) + 1;
+        for (const l of lines(errText ?? "")) {
+            const m = l.match(/^find: '(.*)': Permission denied$/);
+            if (m) counts[m[1].replace(/\\(.)/g, "$1")] = null;
+        }
         return counts;
     }
-    // cb(counts) with { subfolderPath: visibleItemCount }; subfolders it doesn't list are empty.
+    // Subfolders find didn't list are empty; null counts (not counted yet) and null entries mean unknown.
+    function countOf(counts, p) { return counts ? (p in counts ? counts[p] : 0) : null; }
+    // cb(counts) with { subfolderPath: visibleItemCount }; -L follows symlinked folders like the listing does.
     // cb(null) when it ran out of time (huge trees): callers keep showing "Folder".
     function countSubfolders(dir, cb) {
-        run(["timeout", "3", "find", dir, "-mindepth", "2", "-maxdepth", "2", "-not", "-name", ".*", "-printf", "%h\\n"],
-            (text, code) => cb(code === 124 ? null : tallyCounts(text)));
+        run(["env", "LC_ALL=C", "timeout", "3", "find", "-L", dir, "-mindepth", "2", "-maxdepth", "2", "-not", "-name", ".*", "-printf", "%h\\n"],
+            (text, code, err) => cb(code === 124 ? null : tallyCounts(text, err)));
     }
     function countLabel(n) {
-        if (n === undefined) return "Folder";
+        if (n == null) return "Folder";
         if (n === 0) return "Empty";
         return n === 1 ? "1 item" : n + " items";
     }

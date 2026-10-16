@@ -36,7 +36,7 @@ ListView {
         if (f === "doc") return "Documents";
         return tab.files.length > 0 && tab.files.every(it => Fs.kindOf(it) === "image") ? "Images" : "Files";
     }
-    model: {
+    readonly property var rows: {
         const rows = [];
         if (tab.folders.length) {
             rows.push({ kind: "label", text: "Folders" });
@@ -47,6 +47,20 @@ ListView {
             for (const r of chunk(tab.files, fileCols)) rows.push({ kind: "files", items: r });
         }
         return rows;
+    }
+    // A rebuilt listing (a file added, the column count changed) keeps its scroll position; another folder starts at the top.
+    // The model is set here, not bound: ListView jumps to the top on a new model before any handler sees it.
+    property string shownPath: ""
+    onRowsChanged: show()
+    Component.onCompleted: show()
+    function show() {
+        const y = contentY - originY, same = tab.path === shownPath;
+        model = rows;
+        shownPath = tab.path;
+        if (!same) return;
+        forceLayout();
+        contentY = originY + y;
+        returnToBounds();
     }
 
     clip: false

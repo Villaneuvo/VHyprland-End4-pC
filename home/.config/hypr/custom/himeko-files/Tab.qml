@@ -21,7 +21,7 @@ QtObject {
     property int direction: 1              // 1 = into/forward, -1 = back/up: which way the content slides
     property real loadedAt: 0              // when the current folder was first listed (tiles animate in after it)
     property string loadedPath: ""
-    function countOf(p) { return counts ? (counts[p] ?? 0) : undefined; }
+    function countOf(p) { return Fs.countOf(counts, p); }
 
     readonly property string name: path === "/" ? "/" : path === Fs.home ? "Home" : path.slice(path.lastIndexOf("/") + 1)
     readonly property bool inTrash: path === Fs.trashDir || path.startsWith(Fs.trashDir + "/")

@@ -37,6 +37,14 @@ ShellRoot {
         check("label: empty", Fs.countLabel(0), "Empty");
         check("label: one", Fs.countLabel(1), "1 item");
         check("label: many", Fs.countLabel(24), "24 items");
+        // unreadable subfolders (find prints "Permission denied") are unknown, not empty
+        const denied = "find: '/a/root': Permission denied\nfind: '/a/it\\'s': Permission denied\nfind: '/a/loop': File system loop detected\n";
+        check("tally: unreadable is unknown", Fs.tallyCounts("/a/x\n", denied), { "/a/x": 1, "/a/root": null, "/a/it's": null });
+        const c = Fs.tallyCounts("/a/x\n", denied);
+        check("countOf: listed", Fs.countOf(c, "/a/x"), 1);
+        check("countOf: unlisted is empty", Fs.countOf(c, "/a/y"), 0);
+        check("countOf: unreadable", Fs.countLabel(Fs.countOf(c, "/a/root")), "Folder");
+        check("countOf: not counted yet", Fs.countLabel(Fs.countOf(null, "/a/x")), "Folder");
 
         // ---- motion tokens (Theme) ----
         check("curve: fastSpatial", Theme.curve.fastSpatial, [0.42, 1.67, 0.21, 0.90, 1, 1]);

@@ -20,7 +20,21 @@ ListView {
         { key: "modified", label: "Modified", w: 170 },
         { key: "kind", label: "Kind", w: 130 }
     ]
-    model: tab.items
+    readonly property var rows: tab.items
+    // A rebuilt listing (a file added, the sort changed) keeps its scroll position; another folder starts at the top.
+    // The model is set here, not bound: ListView jumps to the top on a new model before any handler sees it.
+    property string shownPath: ""
+    onRowsChanged: show()
+    Component.onCompleted: show()
+    function show() {
+        const y = contentY - originY, same = tab.path === shownPath;
+        model = rows;
+        shownPath = tab.path;
+        if (!same) return;
+        forceLayout();
+        contentY = originY + y;
+        returnToBounds();
+    }
     clip: false
     boundsBehavior: Flickable.StopAtBounds
     reuseItems: true
