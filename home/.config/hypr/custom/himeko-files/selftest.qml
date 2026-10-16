@@ -28,5 +28,14 @@ ShellRoot {
         check("date: this year", Fs.date(at(2026, 10, 9, 10, 0), now), "9 Oct");
         check("date: last year", Fs.date(at(2025, 12, 31, 10, 0), now), "31 Dec 2025");
         check("date: future", Fs.date(at(2026, 10, 17, 9, 0), now), "17 Oct");
+
+        // ---- item counts (Fs.tallyCounts, Fs.countLabel) ----
+        check("tally: counts per parent", Fs.tallyCounts("/a/x\n/a/x\n/a/y\n"), { "/a/x": 2, "/a/y": 1 });
+        check("tally: empty output", Fs.tallyCounts(""), {});
+        check("tally: names with spaces", Fs.tallyCounts("/a/My Folder\n"), { "/a/My Folder": 1 });
+        check("label: unknown", Fs.countLabel(undefined), "Folder");
+        check("label: empty", Fs.countLabel(0), "Empty");
+        check("label: one", Fs.countLabel(1), "1 item");
+        check("label: many", Fs.countLabel(24), "24 items");
     }
 }

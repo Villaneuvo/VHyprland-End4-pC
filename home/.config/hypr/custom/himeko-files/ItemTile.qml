@@ -63,7 +63,7 @@ MouseArea {
             spacing: 0
             NameText { visible: !root.renaming; Layout.fillWidth: true }
             Loader { active: root.renaming; visible: active; Layout.fillWidth: true; sourceComponent: renameField }
-            Text { text: "Folder"; color: Theme.textDim; font.family: Theme.font; font.pixelSize: 12 }
+            Text { text: Fs.countLabel(root.tab.countOf(root.item.path)); color: Theme.textDim; font.family: Theme.font; font.pixelSize: 12 }
         }
     }
 

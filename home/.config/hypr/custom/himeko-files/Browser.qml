@@ -218,7 +218,7 @@ FocusScope {
         else if ((alt && k === Qt.Key_Up) || k === Qt.Key_Backspace) tab.goUp();
         else if (alt && (k === Qt.Key_Return || k === Qt.Key_Enter)) infoOpen = !infoOpen;
         else if (k === Qt.Key_F2) startRename();
-        else if (k === Qt.Key_F5) tab.reload();
+        else if (k === Qt.Key_F5) { tab.countedPath = ""; tab.counts = null; tab.reload(); }
         else if (k === Qt.Key_F9) railForced = !railForced;
         else if (k === Qt.Key_F11) infoOpen = !infoOpen;
         else if (shift && k === Qt.Key_Delete) confirmDelete();

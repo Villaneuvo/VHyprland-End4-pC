@@ -16,6 +16,9 @@ QtObject {
     property var selection: ({})           // path -> true
     property string current: ""            // keyboard focus
     property string anchor: ""             // shift-click range start
+    property var counts: null              // subfolder path -> item count; null until counted
+    property string countedPath: ""
+    function countOf(p) { return counts ? (counts[p] ?? 0) : undefined; }
 
     readonly property string name: path === "/" ? "/" : path === Fs.home ? "Home" : path.slice(path.lastIndexOf("/") + 1)
     readonly property bool inTrash: path === Fs.trashDir || path.startsWith(Fs.trashDir + "/")
@@ -39,6 +42,12 @@ QtObject {
             });
         }
         all = list;
+        // Count the subfolders once per visit (F5 resets countedPath); ignore answers for a folder we left
+        if (countedPath !== path && list.some(it => it.isDir)) {
+            const asked = path;
+            countedPath = path;
+            Fs.countSubfolders(asked, (c) => { if (tab.path === asked) tab.counts = c; });
+        }
     }
     readonly property Connections watch: Connections {
         target: tab.model
@@ -77,6 +86,7 @@ QtObject {
         path = p.length > 1 && p.endsWith("/") ? p.slice(0, -1) : p;
         selection = ({}); current = ""; anchor = ""; query = "";
         all = [];
+        counts = null; countedPath = "";
     }
     function goBack() { if (back.length) { forward = [path].concat(forward); const p = back[back.length - 1]; back = back.slice(0, -1); go(p, false); } }
     function goForward() { if (forward.length) { back = back.concat([path]); const p = forward[0]; forward = forward.slice(1); go(p, false); } }

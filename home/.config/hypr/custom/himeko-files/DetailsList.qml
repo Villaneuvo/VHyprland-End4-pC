@@ -146,7 +146,7 @@ ListView {
             }
             Repeater {
                 model: [
-                    row.modelData.isDir ? "—" : Fs.size(row.modelData.size),
+                    row.modelData.isDir ? Fs.countLabel(root.tab.countOf(row.modelData.path)) : Fs.size(row.modelData.size),
                     Fs.date(row.modelData.modified),
                     Fs.labelOf(row.kind, row.modelData.suffix)
                 ]

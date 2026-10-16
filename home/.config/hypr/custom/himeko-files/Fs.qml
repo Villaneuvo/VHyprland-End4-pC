@@ -93,6 +93,24 @@ Singleton {
         if (days < 7) return days + " days ago";
         return absolute();
     }
+
+    // ---- folder item counts: one `find` per folder visit counts every subfolder at once ----
+    function tallyCounts(text) {
+        const counts = {};
+        for (const l of lines(text)) counts[l] = (counts[l] ?? 0) + 1;
+        return counts;
+    }
+    // cb(counts) with { subfolderPath: visibleItemCount }; subfolders it doesn't list are empty.
+    // cb(null) when it ran out of time (huge trees): callers keep showing "Folder".
+    function countSubfolders(dir, cb) {
+        run(["timeout", "3", "find", dir, "-mindepth", "2", "-maxdepth", "2", "-not", "-name", ".*", "-printf", "%h\\n"],
+            (text, code) => cb(code === 124 ? null : tallyCounts(text)));
+    }
+    function countLabel(n) {
+        if (n === undefined) return "Folder";
+        if (n === 0) return "Empty";
+        return n === 1 ? "1 item" : n + " items";
+    }
     readonly property var kinds: ({
         image: { icon: "image", label: "Image", ext: ["jpg", "jpeg", "png", "gif", "webp", "avif", "bmp", "svg", "heic", "jxl", "tif", "tiff", "ico"] },
         video: { icon: "movie", label: "Video", ext: ["mp4", "mkv", "webm", "mov", "avi", "m4v"] },
