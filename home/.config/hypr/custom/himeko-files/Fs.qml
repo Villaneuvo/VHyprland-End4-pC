@@ -141,6 +141,20 @@ Singleton {
     function iconOf(kind) { return kind === "folder" ? "folder" : (kinds[kind]?.icon ?? "draft"); }
     function labelOf(kind, suffix) { return kind === "folder" ? "Folder" : (kinds[kind]?.label ?? ((suffix ? suffix.toUpperCase() + " " : "") + "file")); }
     function isArchive(item) { return kindOf(item) === "archive"; }
+    // Quick Look body for an item: kinds that say enough map directly, the rest need the MIME type ("" until known)
+    readonly property var textMimes: ["application/json", "application/xml", "application/x-shellscript", "application/javascript",
+                                      "application/toml", "application/yaml", "application/x-yaml"]
+    function previewType(kind, mime) {
+        if (["image", "video", "audio", "pdf", "font", "folder"].indexOf(kind) >= 0) return kind;
+        if (kind === "code") return "text";
+        if (!mime) return "";
+        if (mime.startsWith("text/") || textMimes.indexOf(mime) >= 0) return "text";
+        if (mime.startsWith("video/")) return "video";
+        if (mime.startsWith("audio/")) return "audio";
+        return "info";
+    }
+    // Left/Right in Quick Look: stops at the ends; an item no longer listed starts from the first
+    function stepIndex(i, d, n) { return i < 0 ? 0 : Math.max(0, Math.min(n - 1, i + d)); }
 
     // ---- thumbnails (freedesktop cache, shared with Dolphin/GNOME) ----
     function thumbPath(path) {
@@ -288,7 +302,8 @@ Singleton {
     }
     // Apps registered for a file's type: [{ name, icon, file, isDefault }]
     function appsFor(path, cb) {
-        run(["bash", "-c", "gio mime \"$(xdg-mime query filetype \"$1\")\"", "_", path], (text) => {
+        run(["bash", "-c", "m=$(xdg-mime query filetype \"$1\"); echo \"MIME $m\"; gio mime \"$m\"", "_", path], (text) => {
+            const mime = (/^MIME (.*)$/m.exec(text) || [])[1] ?? "";
             const ids = [];
             let def = "";
             for (const l of lines(text)) {
@@ -308,7 +323,7 @@ Singleton {
                 apps.push({ name: e ? e.name : guess, icon: e ? e.icon : bare, id: id, isDefault: id === def });
             }
             apps.sort((a, b) => b.isDefault - a.isDefault);
-            cb(apps);
+            cb(apps, mime);
         });
     }
     function launchApp(id, path) { Quickshell.execDetached(["gtk-launch", id, path]); }

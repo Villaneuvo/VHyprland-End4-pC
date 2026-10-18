@@ -60,6 +60,24 @@ ShellRoot {
         check("kinds: comic", Fs.kindOf({ isDir: false, suffix: "cbz" }), "doc");
         Fs.thumbExts = {}; Fs.thumbFailed = {};
 
+        // ---- Quick Look rules ----
+        check("type: image", Fs.previewType("image", ""), "image");
+        check("type: code", Fs.previewType("code", ""), "text");
+        check("type: pdf", Fs.previewType("pdf", ""), "pdf");
+        check("type: font", Fs.previewType("font", ""), "font");
+        check("type: folder", Fs.previewType("folder", ""), "folder");
+        check("type: doc waits for mime", Fs.previewType("doc", ""), "");
+        check("type: txt", Fs.previewType("doc", "text/plain"), "text");
+        check("type: odt", Fs.previewType("doc", "application/vnd.oasis.opendocument.text"), "info");
+        check("type: djvu", Fs.previewType("doc", "image/vnd.djvu"), "info");
+        check("type: json", Fs.previewType("file", "application/json"), "text");
+        check("type: odd audio", Fs.previewType("file", "audio/x-mod"), "audio");
+        check("type: zip", Fs.previewType("archive", "application/zip"), "info");
+        check("step: next", Fs.stepIndex(2, 1, 5), 3);
+        check("step: stops at end", Fs.stepIndex(4, 1, 5), 4);
+        check("step: stops at start", Fs.stepIndex(0, -1, 5), 0);
+        check("step: missing item", Fs.stepIndex(-1, 1, 5), 0);
+
         // ---- motion tokens (Theme) ----
         check("curve: fastSpatial", Theme.curve.fastSpatial, [0.42, 1.67, 0.21, 0.90, 1, 1]);
         check("curve: enter", Theme.curve.enter, [0.05, 0.7, 0.1, 1, 1, 1]);

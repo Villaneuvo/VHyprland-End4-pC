@@ -12,6 +12,23 @@ FocusScope {
     property int tabIndex: 0
     readonly property var tab: tabs[tabIndex] ?? null
     property bool infoOpen: false
+    property var lookItem: null            // Quick Look's item; null = closed
+    property var lookShown: null           // what the card shows: stays set during the close fade
+    onLookItemChanged: if (lookItem) { lookShown = lookItem; lookLoader.item?.forceActiveFocus(); }
+    function openLook() { const it = tab.focusItem ?? tab.selectedItems[0] ?? null; if (it) lookItem = it; }
+    function closeLook() { lookItem = null; view.forceActiveFocus(); }
+    function lookStep(d) {
+        const items = tab.items, it = items[Fs.stepIndex(items.findIndex(x => x.path === lookItem.path), d, items.length)];
+        if (!it) return;
+        tab.select(it, 0);
+        ensureVisible(it.path);
+        lookItem = it;
+    }
+    // The previewed file was deleted or renamed: close
+    Connections {
+        target: root.tab
+        function onItemsChanged() { if (root.lookItem && !root.tab.items.some(it => it.path === root.lookItem.path)) root.closeLook(); }
+    }
     property bool railForced: false
     readonly property bool rail: railForced || width < 980
     property real zoom: 1.0
@@ -121,6 +138,7 @@ FocusScope {
         if (one) quick.push({ icon: "edit", label: "Rename", action: startRename });
         quick.push({ icon: "delete", label: "Trash", danger: true, action: trashSelection });
         const e = [{ icon: "open_in_new", label: "Open", hint: "Enter", bold: true, action: openSelection }];
+        if (one) e.push({ icon: "visibility", label: "Quick Look", hint: "Space", action: () => lookItem = one });
         if (one && !one.isDir) e.push({ icon: "apps", label: "Open with", sub: (done) => Fs.appsFor(one.path, apps => done(apps.length
             ? apps.map(a => ({ label: a.name + (a.isDefault ? "  ·  default" : ""), appIcon: Quickshell.iconPath(a.icon, true), action: () => Fs.launchApp(a.id, one.path) }))
             : [{ label: "No apps for this file", disabled: true }])) });
@@ -225,6 +243,7 @@ FocusScope {
         else if (shift && k === Qt.Key_Delete) confirmDelete();
         else if (k === Qt.Key_Delete) trashSelection();
         else if (k === Qt.Key_Return || k === Qt.Key_Enter) openSelection();
+        else if (k === Qt.Key_Space && !ctrl && !alt && !shift) openLook();
         else if (k === Qt.Key_Left) moveFocus(-1, 0, e.modifiers);
         else if (k === Qt.Key_Right) moveFocus(1, 0, e.modifiers);
         else if (k === Qt.Key_Up) moveFocus(0, -1, e.modifiers);
@@ -855,7 +874,40 @@ FocusScope {
         function scroll(px: int): void { const l = root.tab.viewMode === "details" ? detailsView : iconView; l.contentY = l.originY - l.topMargin + px; }
         function scrollY(): int { const l = root.tab.viewMode === "details" ? detailsView : iconView; return Math.round(l.contentY - l.originY + l.topMargin); }
         function newTab(path: string): void { root.newTab(path); }
+        function look(name: string): void {
+            if (!name) return root.closeLook();
+            const s = {};
+            root.tab.items.forEach(it => { if (it.name === name) s[it.path] = true; });
+            root.tab.selection = s;
+            root.tab.current = Object.keys(s)[0] ?? "";
+            root.openLook();
+        }
+        function lookStep(d: int): void { if (root.lookItem) root.lookStep(d); }
+        function lookState(): string {
+            const q = lookLoader.item, b = q ? q.body : null;
+            return JSON.stringify({ open: root.lookItem !== null, type: q ? q.type : "", name: root.lookItem ? root.lookItem.name : "",
+                                    page: b && b.page !== undefined ? b.page : 0, pages: b && b.pages !== undefined ? b.pages : 0,
+                                    playing: !!(b && b.playing), muted: !!(b && b.muted) });
+        }
         function menuAt(xy: string): void { const p = xy.split(","); root.backgroundMenu(Number(p[0]), Number(p[1])); }
+    }
+
+    // ---- Quick Look ----
+    Loader {
+        id: lookLoader
+        anchors.fill: parent
+        active: root.lookShown !== null
+        sourceComponent: QuickLook {
+            item: root.lookShown
+            tab: root.tab
+            backdrop: view
+            shown: root.lookItem !== null
+            onClose: root.closeLook()
+            onStep: (d) => root.lookStep(d)
+            onOpen: { const it = root.lookShown; root.closeLook(); root.activate(it); }
+            onFaded: root.lookShown = null
+        }
+        onLoaded: item.forceActiveFocus()
     }
 
     // ---- menu overlay ----
