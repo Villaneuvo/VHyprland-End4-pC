@@ -9,6 +9,7 @@
 #   ops.sh extract ARCHIVE               -> created folder
 #   ops.sh pages PDF                     -> page count (exit 1 if unreadable)
 #   ops.sh page PDF N WIDTH OUT          -> page N as a WIDTH px wide PNG at OUT
+#   ops.sh text FILE                     -> its first 256 KB; exit 3 (no output) when they hold a NUL byte (binary)
 #   ops.sh thumbexts                     -> extensions that have a thumbnailer, one per line
 #   ops.sh thumb SRC DST SIZE KIND       -> exit 0 when DST was written (KIND: the app's kind, image/video/…)
 # Thumbnailers, ImageMagick and ffmpeg parse untrusted files, so they run in bwrap (see sandbox).
@@ -82,6 +83,10 @@ extract)
         *.zip) unzip -q -- "$archive" -d "$target" ;;
         *) tar -xf "$archive" -C "$target" ;;
     esac && printf '%s\n' "$target" || { rmdir -- "$target" 2>/dev/null; exit 1; } ;;
+text)
+    tmp=$(mktemp); head -c 262144 -- "$1" >"$tmp" || { rm -f -- "$tmp"; exit 1; }
+    if [ "$(tr -d '\0' <"$tmp" | wc -c)" != "$(wc -c <"$tmp")" ]; then rm -f -- "$tmp"; exit 3; fi
+    cat -- "$tmp"; rm -f -- "$tmp" ;;
 pages)
     # one subshell for the sandbox and its cleanup: $sbdir is set inside it
     n=$({ sandbox "$1" pdfinfo "$(inpath "$1")" 2>/dev/null; rm -rf -- "$sbdir"; } | awk '/^Pages:/ { print $2 }')
@@ -182,6 +187,10 @@ selftest)
     check "page width" "$(magick identify -format %w "$t/p2.png" 2>/dev/null)" "600"
     head -c 4000 /dev/urandom >"$t/broken.pdf"
     check "broken pdf" "$("$me" pages "$t/broken.pdf" >/dev/null 2>&1; echo $?)" "1"
+    # ---- text ----
+    printf 'hello <b>x</b>\n' >"$t/t.txt"; check "text" "$("$me" text "$t/t.txt")" "hello <b>x</b>"
+    printf 'a\0b' >"$t/bin.txt"; "$me" text "$t/bin.txt" >/dev/null; check "binary" "$?" "3"
+    yes 'a line of text' | head -c 300000 >"$t/big.log"; check "text is capped" "$("$me" text "$t/big.log" | wc -c)" "262144"
     exit $fail ;;
 *) echo "usage: see the header of $0" >&2; exit 2 ;;
 esac

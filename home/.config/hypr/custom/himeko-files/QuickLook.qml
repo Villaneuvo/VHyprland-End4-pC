@@ -146,6 +146,8 @@ FocusScope {
                                    : root.type === "image" ? imageBody
                                    : root.type === "video" || root.type === "audio" ? mediaBody
                                    : root.type === "pdf" ? pdfBody
+                                   : root.type === "text" ? textBody
+                                   : root.type === "font" ? fontBody
                                    : root.type === "folder" ? folderBody
                                    : root.type === "" ? null : infoBody
                 }
@@ -188,6 +190,16 @@ FocusScope {
     Component {
         id: mediaBody
         LookMedia { item: root.item; video: root.type === "video" }
+    }
+
+    Component {
+        id: textBody
+        LookText { item: root.item }
+    }
+
+    Component {
+        id: fontBody
+        LookFont { item: root.item }
     }
 
     Component {
