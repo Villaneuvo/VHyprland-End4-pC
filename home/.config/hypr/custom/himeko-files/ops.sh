@@ -13,6 +13,8 @@
 #                                           mime description avail total (TAB-separated; avail/total for folders)
 #   ops.sh dirsize PATH...               -> "items<TAB>bytes" every 5000 entries, then "done<TAB>items<TAB>bytes"
 #   ops.sh chmod MODE PATH...            -> chmod, symlinks skipped
+#   ops.sh meta FILE KIND                -> "Label<TAB>Value" lines (KIND image/video/audio/pdf/font; readers sandboxed)
+#   ops.sh mimedefault MIME APP.desktop  -> sets the default app in the mimeapps file this session reads first
 #   ops.sh fontstyle FONT                -> its style name ("Bold", "Italic", …)
 #   ops.sh text FILE                     -> its first 256 KB; exit 3 (no output) when they hold a NUL byte (binary)
 #   ops.sh thumbexts                     -> extensions that have a thumbnailer, one per line
@@ -118,6 +120,46 @@ chmod)
     mode=$1; shift; ok=0
     for p in "$@"; do [ -L "$p" ] && continue; chmod -- "$mode" "$p" || ok=1; done
     exit $ok ;;
+meta)
+    src=$1 kind=$2 in=$(inpath "$1")
+    case "$kind" in
+    image) # magick's -format knows \n but not \t: the tabs are real ones ($'…')
+        { sandbox "$src" magick identify -format "$(printf '%s' $'Dimensions\t%w × %h\nColor\t%[colorspace]\nBit depth\t%z-bit\nCamera\t%[EXIF:Make] %[EXIF:Model]\nTaken\t%[EXIF:DateTimeOriginal]\nExposure\t%[EXIF:ExposureTime] s\nAperture\t%[EXIF:FNumber]\nISO\t%[EXIF:PhotographicSensitivity]\nFocal length\t%[EXIF:FocalLength]\nOrientation\t%[EXIF:Orientation]\n')" "$in[0]" 2>/dev/null; unsandbox; } |
+        awk -F'\t' -v OFS='\t' '$1 == "Aperture" && $2 ~ /\// { split($2, r, "/"); $2 = r[2] ? sprintf("f/%.1f", r[1] / r[2]) : "" }
+                               $1 == "Focal length" && $2 ~ /\// { split($2, r, "/"); $2 = r[2] ? sprintf("%g mm", r[1] / r[2]) : "" }
+                               $1 == "Exposure" && $2 == " s" { $2 = "" } { print }' ;;
+    audio|video) { sandbox "$src" ffprobe -v error -show_format -show_streams -of json "$in" 2>/dev/null; unsandbox; } | jq -r '
+        def two: tostring | if length < 2 then "0" + . else . end;
+        def clock: (tonumber? // 0) | floor | if . >= 3600 then "\(. / 3600 | floor):\(. % 3600 / 60 | floor | two):\(. % 60 | two)"
+                                               else "\(. / 60 | floor):\(. % 60 | two)" end;
+        def fps: split("/") | (.[0] | tonumber) as $a | (.[1] | tonumber) as $b | if $b > 0 then ($a / $b * 100 | round / 100) else null end;
+        (.format.tags // {} | with_entries(.key |= ascii_downcase)) as $t | (.streams // []) as $s
+        | ($s | map(select(.codec_type == "video" and (.disposition.attached_pic // 0) == 0)) | first) as $v
+        | ($s | map(select(.codec_type == "audio")) | first) as $a
+        | [["Duration", (.format.duration | if . then clock else null end)], ["Title", $t.title], ["Artist", $t.artist],
+           ["Album", $t.album], ["Year", ($t.date // $t.year)],
+           ["Video", (if $v then "\($v.codec_name), \($v.width) × \($v.height)" + (($v.avg_frame_rate | fps) as $f | if $f then ", \($f) fps" else "" end) else null end)],
+           ["Audio", (if $a then "\($a.codec_name), \($a.channels) ch, \($a.sample_rate) Hz" else null end)],
+           ["Bitrate", (.format.bit_rate | if . then "\(tonumber / 1000 | round) kb/s" else null end)]]
+        | .[] | select(.[1] != null and .[1] != "") | "\(.[0])\t\(.[1])"' 2>/dev/null ;;
+    pdf) { sandbox "$src" pdfinfo "$in" 2>/dev/null; unsandbox; } |
+        awk '{ k = $0; sub(/:.*/, "", k); v = $0; sub(/^[^:]*: */, "", v) }
+             k ~ /^(Pages|Title|Author|Subject|Creator|Producer|Page size|PDF version)$/ { print k "\t" v }' ;;
+    font) { sandbox "$src" fc-scan --format 'Family\t%{family[0]}\nStyle\t%{style[0]}\nVersion\t%{fontversion}\nFoundry\t%{foundry}\n' "$in" 2>/dev/null; unsandbox; } |
+        awk -F'\t' -v OFS='\t' '$1 == "Version" && $2 != "" { $2 = sprintf("%.3f", $2 / 65536) } $1 == "Foundry" && $2 == "unknown" { $2 = "" } { print }' ;;
+    esac | awk -F'\t' '$2 !~ /^ *$/' ;;
+mimedefault)
+    mime=$1 id=$2 cfg=${XDG_CONFIG_HOME:-$HOME/.config} desk=${XDG_CURRENT_DESKTOP:-}; desk=${desk%%:*}
+    f=$cfg/mimeapps.list
+    [ -n "$desk" ] && [ -f "$cfg/${desk,,}-mimeapps.list" ] && f=$cfg/${desk,,}-mimeapps.list
+    mkdir -p -- "$cfg"; touch -- "$f"; tmp=$(mktemp -p "$cfg")
+    # Replace this type's line in [Default Applications] (else add it at the section's end, else add the section)
+    awk -v line="$mime=$id" -v key="$mime=" '
+        /^\[/ { if (ind && !done) { print line; done = 1 } ind = ($0 == "[Default Applications]"); if (ind) seen = 1; print; next }
+        ind && index($0, key) == 1 { if (!done) { print line; done = 1 } next }
+        { print }
+        END { if (!seen) { print ""; print "[Default Applications]" } if (!done) print line }' "$f" >"$tmp" &&
+        mv -- "$tmp" "$f" && printf '%s\n' "$f" ;;
 fontstyle)
     { sandbox "$1" fc-scan --format '%{style[0]}\n' "$(inpath "$1")" 2>/dev/null; unsandbox; } | head -1 ;;
 pages)
@@ -249,6 +291,21 @@ selftest)
     check "dirsize mixed" "$("$me" dirsize "$t/p/d" "$t/p/f.txt" | tail -1)" "done"$'\t'"4"$'\t'"9"
     "$me" chmod 4750 "$t/p/f.txt"; check "chmod" "$(stat -c %a "$t/p/f.txt")" "4750"
     "$me" chmod 600 "$t/p/l"; check "chmod skips symlinks" "$(stat -c %a "$t/p/f.txt")" "4750"
+    # ---- properties: meta, mimedefault ----
+    magick -size 320x200 xc:pink "$t/m.png"
+    check "meta image" "$("$me" meta "$t/m.png" image | grep '^Dimensions')" "Dimensions"$'\t'"320 × 200"
+    check "meta song title" "$("$me" meta "$t/song.mp3" audio | grep -c '^Duration')" "1"
+    ffmpeg -loglevel error -y -f lavfi -i sine=duration=1 -metadata title='<b>Bold</b> & co' -metadata artist=Himeko "$t/tag.mp3"
+    check "meta tags" "$("$me" meta "$t/tag.mp3" audio | grep -E '^(Title|Artist)' | tr '\n' '|')" "Title"$'\t''<b>Bold</b> & co|Artist'$'\t''Himeko|'
+    check "meta pdf pages" "$("$me" meta "$t/two.pdf" pdf | grep '^Pages')" "Pages"$'\t'"2"
+    check "meta font style" "$("$me" meta "$bold" font | grep '^Style')" "Style"$'\t'"Bold"
+    c=$t/cfg; mkdir -p "$c"; printf '# mine\n[Added Associations]\nx/y=a.desktop;\n' >"$c/mimeapps.list"
+    XDG_CONFIG_HOME=$c XDG_CURRENT_DESKTOP=Hyprland "$me" mimedefault image/png loupe.desktop >/dev/null
+    check "mimedefault adds section" "$(grep -A1 '^\[Default Applications\]' "$c/mimeapps.list" | tail -1)" "image/png=loupe.desktop"
+    check "mimedefault keeps the rest" "$(head -3 "$c/mimeapps.list" | tr '\n' '|')" "# mine|[Added Associations]|x/y=a.desktop;|"
+    printf '# hypr\n[Default Applications]\nimage/png=old.desktop\nvideo/mp4=vlc.desktop\n' >"$c/hyprland-mimeapps.list"
+    check "mimedefault picks desktop file" "$(XDG_CONFIG_HOME=$c XDG_CURRENT_DESKTOP=Hyprland "$me" mimedefault image/png loupe.desktop)" "$c/hyprland-mimeapps.list"
+    check "mimedefault replaces" "$(tr '\n' '|' <"$c/hyprland-mimeapps.list")" "# hypr|[Default Applications]|image/png=loupe.desktop|video/mp4=vlc.desktop|"
     exit $fail ;;
 *) echo "usage: see the header of $0" >&2; exit 2 ;;
 esac
