@@ -103,8 +103,10 @@ props)
         st=$(stat -c $'%a\t%U\t%G\t%u\t%s\t%X\t%Y\t%W' -- "$p" 2>/dev/null) || { echo '!'; continue; }   # keeps lines and paths aligned
         if [ -L "$p" ]; then type=link; tgt=$(readlink -- "$p"); [ -e "$p" ] || tgt='!broken'
         elif [ -d "$p" ]; then type=dir; tgt=; else type=file; tgt=; fi
-        info=$(gio info -a standard::content-type,standard::description -- "$p" 2>/dev/null)
-        mime=$(sed -n 's/^ *standard::content-type: //p' <<<"$info"); desc=$(sed -n 's/^ *standard::description: //p' <<<"$info")
+        mime=$(gio info -a standard::content-type -- "$p" 2>/dev/null | sed -n 's/^ *standard::content-type: //p')
+        # gio has no description for local files: shared-mime-info's English <comment> ("PNG image")
+        desc=$(sed -n 's|^ *<comment>\(.*\)</comment>|\1|p' "$HOME/.local/share/mime/$mime.xml" "/usr/share/mime/$mime.xml" 2>/dev/null |
+            head -1 | sed 's/&lt;/</g; s/&gt;/>/g; s/&amp;/\&/g')
         avail= total=
         [ "$type" = dir ] && read -r avail total < <(df -B1 --output=avail,size -- "$p" | tail -1)
         uid=$(cut -f4 <<<"$st"); mine=0; [ "$uid" = "$myuid" ] && mine=1
@@ -283,6 +285,7 @@ selftest)
     check "props mode" "$(cut -f1 <<<"$pl")" "640"; check "props mine" "$(cut -f4 <<<"$pl")" "1"
     check "props size" "$(cut -f5 <<<"$pl")" "3"; check "props type" "$(cut -f9 <<<"$pl")" "file"
     check "props mime" "$(cut -f11 <<<"$pl")" "text/plain"
+    check "props description" "$(cut -f12 <<<"$pl")" "Plain text document"
     check "props link" "$("$me" props "$t/p/l" | cut -f9,10)" "link"$'\t'"f.txt"
     check "props broken link" "$("$me" props "$t/p/dead" | cut -f10)" "!broken"
     check "props dir free space" "$("$me" props "$t/p/d" | awk -F'\t' '{ print ($13 > 0 && $14 >= $13) }')" "1"

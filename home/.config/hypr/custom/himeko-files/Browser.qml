@@ -24,10 +24,24 @@ FocusScope {
         ensureVisible(it.path);
         lookItem = it;
     }
-    // The previewed file was deleted or renamed: close
+    property var propsItems: null          // Properties' items; null = closed
+    property var propsShown: null          // stays set during the close fade
+    property string propsFollow: ""        // renamed from the card: follow it once the listing has it
+    onPropsItemsChanged: if (propsItems) { propsShown = propsItems; propsLoader.item?.forceActiveFocus(); }
+    function openProps(items) { if (items && items.length) propsItems = items; }
+    function closeProps() { propsItems = null; propsFollow = ""; view.forceActiveFocus(); }
+    function folderItem() { return { name: tab.name, path: tab.path, isDir: true, suffix: "", size: 0, modified: new Date(), isCurrent: true }; }
+    // The previewed file (or one in Properties) was deleted or renamed elsewhere: close
     Connections {
         target: root.tab
-        function onItemsChanged() { if (root.lookItem && !root.tab.items.some(it => it.path === root.lookItem.path)) root.closeLook(); }
+        function onItemsChanged() {
+            if (root.lookItem && !root.tab.items.some(it => it.path === root.lookItem.path)) root.closeLook();
+            if (!root.propsItems) return;
+            const followed = root.propsFollow ? root.tab.items.find(it => it.path === root.propsFollow) : null;
+            if (followed) { root.propsFollow = ""; root.propsItems = [followed]; return; }
+            const here = (it) => it.isCurrent ? it.path === root.tab.path : root.tab.items.some(x => x.path === it.path);
+            if (!root.propsFollow && !root.propsItems.every(here)) root.closeProps();
+        }
     }
     property bool railForced: false
     readonly property bool rail: railForced || width < 980
@@ -149,7 +163,7 @@ FocusScope {
         e.push({ icon: "link", label: "Copy path", action: () => Fs.copyText(tab.paths().join("\n")) });
         if (one && one.isDir) e.push({ icon: "terminal", label: "Open terminal here", action: () => Fs.terminal(one.path) });
         e.push({ separator: true });
-        e.push({ icon: "info", label: "Properties", hint: "F11", action: () => infoOpen = true });
+        e.push({ icon: "info", label: "Properties", hint: "Alt+Enter", action: () => openProps(tab.selectedItems) });
         e.push({ icon: "folder_managed", label: "Show in Dolphin", action: () => Fs.openDolphin(one && one.isDir ? one.path : tab.path) });
         e.push({ icon: "delete_forever", label: "Delete permanently", hint: "Shift+Del", danger: true, action: confirmDelete });
         showMenu(x, y, quick, e);
@@ -170,7 +184,8 @@ FocusScope {
             { icon: "sort", label: "Sort by", sub: sorts.map(s => ({ icon: tab.sortKey === s[0] ? "check" : "", label: s[1], action: () => setSort(s[0]) })) },
             { separator: true },
             { icon: "terminal", label: "Open terminal here", action: () => Fs.terminal(tab.path) },
-            { icon: "folder_managed", label: "Open in Dolphin", action: () => Fs.openDolphin(tab.path) }
+            { icon: "folder_managed", label: "Open in Dolphin", action: () => Fs.openDolphin(tab.path) },
+            { icon: "info", label: "Properties", action: () => openProps([folderItem()]) }
         ]);
     }
     function setSort(key) {
@@ -235,7 +250,7 @@ FocusScope {
         else if (alt && k === Qt.Key_Left) tab.goBack();
         else if (alt && k === Qt.Key_Right) tab.goForward();
         else if ((alt && k === Qt.Key_Up) || k === Qt.Key_Backspace) tab.goUp();
-        else if (alt && (k === Qt.Key_Return || k === Qt.Key_Enter)) infoOpen = !infoOpen;
+        else if (alt && (k === Qt.Key_Return || k === Qt.Key_Enter)) openProps(tab.selectedItems);
         else if (k === Qt.Key_F2) startRename();
         else if (k === Qt.Key_F5) { tab.countedPath = ""; tab.counts = null; tab.reload(); }
         else if (k === Qt.Key_F9) railForced = !railForced;
@@ -890,6 +905,24 @@ FocusScope {
                                     page: b && b.page !== undefined ? b.page : 0, pages: b && b.pages !== undefined ? b.pages : 0,
                                     playing: !!(b && b.playing), muted: !!(b && b.muted) });
         }
+        function props(names: string): void {
+            if (!names) return root.closeProps();
+            if (names === ".") return root.openProps([root.folderItem()]);
+            const want = names.split("|"), s = {};
+            root.tab.items.forEach(it => { if (want.indexOf(it.name) >= 0) s[it.path] = true; });
+            root.tab.selection = s;
+            root.tab.current = Object.keys(s)[0] ?? "";
+            root.openProps(root.tab.selectedItems);
+        }
+        function propsTab(name: string): void { propsLoader.item?.setTab(name); }
+        function propsRename(name: string): void { propsLoader.item?.rename(name); }
+        function propsState(): string {
+            const p = propsLoader.item;
+            return JSON.stringify({ open: root.propsItems !== null, tab: p ? p.current : "", tabs: p ? p.tabs : [],
+                                    name: p ? p.title : "", size: p ? p.sizeLine : "", counting: p ? p.counting : false,
+                                    perms: p && p.permsState ? p.permsState : {}, apps: p && p.appCount ? p.appCount : 0,
+                                    meta: p && p.metaCount ? p.metaCount : 0 });
+        }
         function menuAt(xy: string): void { const p = xy.split(","); root.backgroundMenu(Number(p[0]), Number(p[1])); }
     }
 
@@ -911,6 +944,24 @@ FocusScope {
                 // Rendered PDF pages live on tmpfs (RAM): drop them once Quick Look is closed
                 Quickshell.execDetached(["rm", "-rf", Quickshell.env("XDG_RUNTIME_DIR") + "/himeko-files/pages"]);
             }
+        }
+        onLoaded: item.forceActiveFocus()
+    }
+
+    // ---- Properties ----
+    Loader {
+        id: propsLoader
+        anchors.fill: parent
+        active: root.propsShown !== null
+        sourceComponent: Properties {
+            items: root.propsShown
+            tab: root.tab
+            backdrop: view
+            shown: root.propsItems !== null
+            onClose: root.closeProps()
+            onFaded: root.propsShown = null
+            onGo: (path) => { root.closeProps(); root.tab.go(path); }
+            onRenamed: (path) => { root.propsFollow = path; root.tab.selectPath(path); }
         }
         onLoaded: item.forceActiveFocus()
     }
