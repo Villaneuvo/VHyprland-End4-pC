@@ -5,7 +5,8 @@
 # Clean up when done: done.sh (closes the test window, then removes the output)
 #   capture.sh OUT.png [FOLDER] [-- "fn arg" ...]      e.g. capture.sh /tmp/a.png ~/Pictures -- "view details"
 # Env: WAIT (seconds for the app to start, default 3), SIZE="W H" (float the window at that size),
-#      HF_ANIMATE (passed to the app; 0 = animations off), HF_MUTE (default 1: Quick Look media stays silent).
+#      HF_ANIMATE (passed to the app; 0 = animations off), HF_MUTE (default 1: Quick Look media stays silent),
+#      HF_ENV (extra NAME=value words for the app, e.g. XDG_CONFIG_HOME=… to keep tests off your mimeapps).
 # The test window is titled "Files (test) — …": only that window is ever closed or captured, never yours.
 set -eu
 here=$(dirname "$(readlink -f "$0")")
@@ -28,7 +29,7 @@ sleep 0.8
 hyprctl eval 'hl.window_rule({match = {title = "^Files \\(test\\)"}, workspace = "name:hftest silent"})' >/dev/null
 rules='workspace = "name:hftest silent"'
 [ -n "${SIZE:-}" ] && rules="$rules, float = true, size = \"$SIZE\""
-hyprctl dispatch "hl.dsp.exec_cmd(\"env HF_TITLE='Files (test)' HF_ANIMATE=${HF_ANIMATE:-} HF_MUTE=${HF_MUTE:-1} $app/himeko-files '$folder'\", { $rules })" >/dev/null
+hyprctl dispatch "hl.dsp.exec_cmd(\"env HF_TITLE='Files (test)' HF_ANIMATE=${HF_ANIMATE:-} HF_MUTE=${HF_MUTE:-1} ${HF_ENV:-} $app/himeko-files '$folder'\", { $rules })" >/dev/null
 sleep "${WAIT:-3}"
 # IPC must name the test instance: without --pid, qs picks the OLDEST instance, which can be one of yours
 pid=$(hyprctl clients -j | jq -r --arg t "$test_title" '[.[] | select(.title|startswith($t))][0].pid')

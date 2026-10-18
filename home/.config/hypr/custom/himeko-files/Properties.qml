@@ -20,7 +20,8 @@ FocusScope {
     readonly property var firstInfo: info.length ? info[0] : null
 
     // ---- tabs ----
-    readonly property var tabs: ["General", "Permissions"]
+    readonly property bool oneFile: one && !first.isDir
+    readonly property var tabs: ["General", "Permissions"].concat(oneFile ? ["Open With"] : [], metaRows.length ? ["Details"] : [])
     readonly property string current: tabs.indexOf(Fs.propsTab) >= 0 ? Fs.propsTab : "General"
     function setTab(name) { if (tabs.indexOf(name) >= 0) Fs.propsTab = name; }
 
@@ -32,11 +33,17 @@ FocusScope {
     readonly property bool needsCount: items.length > 1 || first.isDir
     function stopCount() { if (counter) counter.running = false; counter = null; counting = false; }
     function load() {
-        info = [];
+        info = []; apps = []; appMime = ""; metaRows = [];
         stopCount();
         countItems = 0; countBytes = 0;
         const its = items, paths = its.map(it => it.path);
         Fs.props(paths, (list) => { if (root.items === its) root.info = list; });
+        if (its.length === 1 && !its[0].isDir) {
+            loadApps();
+            const kind = Fs.kindOf(its[0]);
+            if (["image", "video", "audio", "pdf", "font"].indexOf(kind) >= 0)
+                Fs.meta(its[0].path, kind, (rows) => { if (root.items === its) root.metaRows = rows; });
+        }
         // From its, not needsCount: in onItemsChanged that binding can still hold the previous selection's value
         if (its.length === 1 && !its[0].isDir) return;
         counting = true;
@@ -79,6 +86,27 @@ FocusScope {
         // Afterwards the rows show what stat says, also when chmod failed
         const refresh = () => { if (--left === 0) Fs.props(its.map(it => it.path), (list) => { if (root.items === its) root.info = list; }); };
         modes.forEach(m => Fs.chmod(Number(m), byMode[m], refresh));
+    }
+
+    // ---- open with / details ----
+    property var apps: []
+    property string appMime: ""
+    property var metaRows: []
+    readonly property int appCount: apps.length
+    readonly property int metaCount: metaRows.length
+    function loadApps() {
+        const its = items;
+        Fs.appsFor(its[0].path, (a, m) => { if (root.items === its) { root.apps = a; root.appMime = m; } });
+    }
+    function setDefault(id) {
+        const app = apps.find(a => a.id === id);
+        if (!app || !appMime) return;
+        const what = firstInfo && firstInfo.description ? firstInfo.description : appMime;
+        Fs.setDefaultApp(appMime, id, (ok) => {
+            if (!ok) return Fs.failed("Couldn't change the default app");
+            Fs.toast(app.name + " is now the default for " + what, false);
+            root.loadApps();
+        });
     }
 
     property bool renaming: false
@@ -199,7 +227,9 @@ FocusScope {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 sourceComponent: root.current === "General" ? general
-                               : root.current === "Permissions" ? permissions : null
+                               : root.current === "Permissions" ? permissions
+                               : root.current === "Open With" ? openWith
+                               : root.current === "Details" ? details : null
             }
         }
     }
@@ -213,6 +243,16 @@ FocusScope {
         textFormat: Text.PlainText
         wrapMode: Text.WrapAnywhere
         color: Theme.text; font.family: Theme.font; font.pixelSize: 13
+    }
+
+    Component {
+        id: openWith
+        PropsOpenWith { props: root }
+    }
+
+    Component {
+        id: details
+        PropsDetails { props: root }
     }
 
     Component {
