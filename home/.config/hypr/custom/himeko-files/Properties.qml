@@ -270,7 +270,8 @@ FocusScope {
     }
 
     Rectangle { anchors.fill: parent; color: Theme.alpha(Theme.surfaceLowest, 0.45); opacity: root.reveal }
-    MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onPressed: root.close() }
+    // Overlays keep the wheel too: without onWheel a MouseArea lets it through and the folder behind scrolls
+    MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onPressed: root.close(); onWheel: (e) => e.accepted = true }
 
     Glass {
         id: card
@@ -283,7 +284,7 @@ FocusScope {
         tint: Theme.alpha(Theme.surfaceMid, 0.94)
         opacity: root.reveal
         scale: 0.94 + 0.06 * root.pop
-        MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onPressed: root.closePopover() }
+        MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onPressed: root.closePopover(); onWheel: (e) => e.accepted = true }
 
         // Header bar: main page — Open and close; pages — back, centred title, close
         Item {
@@ -353,6 +354,7 @@ FocusScope {
         visible: root.popoverKey !== ""
         acceptedButtons: Qt.AllButtons
         onPressed: root.closePopover()
+        onWheel: (e) => e.accepted = true
     }
     Glass {
         id: popover

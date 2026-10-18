@@ -66,6 +66,7 @@ FocusScope {
         anchors.fill: parent
         acceptedButtons: Qt.AllButtons
         onPressed: root.close()
+        onWheel: (e) => e.accepted = true   // without it the wheel goes through and the folder behind scrolls
     }
 
     // Card size: pictures and video keep their shape up to 86 % of the window; reading types take a page width
@@ -92,7 +93,7 @@ FocusScope {
         tint: Theme.chromeStrong
         opacity: root.reveal
         scale: 0.94 + 0.06 * root.pop
-        MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons }   // clicks on the card don't close it
+        MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onWheel: (e) => e.accepted = true }   // clicks and the wheel stay on the card
 
         ColumnLayout {
             anchors.fill: parent

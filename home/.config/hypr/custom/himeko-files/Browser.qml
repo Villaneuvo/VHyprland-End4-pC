@@ -988,6 +988,7 @@ FocusScope {
         visible: root.menuOpen
         acceptedButtons: Qt.AllButtons
         onPressed: root.menuOpen = false
+        onWheel: (e) => e.accepted = true   // the folder doesn't scroll under an open menu
     }
     Loader {
         id: menuLoader
