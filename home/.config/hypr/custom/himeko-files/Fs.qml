@@ -214,7 +214,6 @@ Singleton {
         return dayNames[d.getDay()] + ", " + d.getDate() + " " + monthNames[d.getMonth()] + " " + d.getFullYear() + ", "
              + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
     }
-    property string propsTab: "General"    // the Properties tab last used (this session)
     // ops.sh props → [{ mode, owner, group, mine, size, atime, mtime, birth, type, target, mime, description, avail, total }]
     // (null for a path it couldn't read)
     function props(paths, cb) {

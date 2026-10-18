@@ -914,7 +914,10 @@ FocusScope {
             root.tab.current = Object.keys(s)[0] ?? "";
             root.openProps(root.tab.selectedItems);
         }
-        function propsTab(name: string): void { propsLoader.item?.setTab(name); }
+        function propsPage(name: string): void { propsLoader.item?.goPage(name); }
+        function propsBack(): void { propsLoader.item?.back(); }
+        function propsOpen(key: string): void { propsLoader.item?.openKey(key, null); }
+        function propsPick(choice: string): void { propsLoader.item?.pick(choice); }
         function propsRename(name: string): void { propsLoader.item?.rename(name); }
         function propsDefault(id: string): void { propsLoader.item?.setDefault(id); }
         // who: u|g|o|exec, prefixed files:/folders: when both kinds are selected; level: the chip text or on/off
@@ -924,7 +927,8 @@ FocusScope {
         }
         function propsState(): string {
             const p = propsLoader.item;
-            return JSON.stringify({ open: root.propsItems !== null, tab: p ? p.current : "", tabs: p ? p.tabs : [],
+            return JSON.stringify({ open: root.propsItems !== null, page: p ? p.page : "", pages: p ? p.pages : [],
+                                    popover: p ? p.popoverKey : "",
                                     name: p ? p.title : "", size: p ? p.sizeLine : "", counting: p ? p.counting : false,
                                     canRename: p ? p.canRename : false,
                                     perms: p && p.permsState ? p.permsState : {}, apps: p && p.appCount ? p.appCount : 0,
@@ -968,6 +972,7 @@ FocusScope {
             onClose: root.closeProps()
             onFaded: root.propsShown = null
             onGo: (path) => { root.closeProps(); root.tab.go(path); }
+            onOpen: { const it = root.propsShown[0]; root.closeProps(); root.activate(it); }
             onRenamed: (path) => { root.propsFollow = path; root.tab.selectPath(path); }
         }
         onLoaded: item.forceActiveFocus()
