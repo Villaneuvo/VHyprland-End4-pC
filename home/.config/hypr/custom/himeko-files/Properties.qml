@@ -20,7 +20,7 @@ FocusScope {
     readonly property var firstInfo: info.length ? info[0] : null
 
     // ---- tabs ----
-    readonly property var tabs: ["General"]
+    readonly property var tabs: ["General", "Permissions"]
     readonly property string current: tabs.indexOf(Fs.propsTab) >= 0 ? Fs.propsTab : "General"
     function setTab(name) { if (tabs.indexOf(name) >= 0) Fs.propsTab = name; }
 
@@ -49,6 +49,37 @@ FocusScope {
     onItemsChanged: load()
     Component.onCompleted: load()
     Component.onDestruction: stopCount()
+
+    // ---- permissions: rows per class (files / folders), changes go out as one chmod per resulting mode ----
+    readonly property bool permsEditable: info.length === items.length && info.every(i => i && i.mine && i.type !== "link")
+    readonly property bool mixedKinds: items.some(it => it.isDir) && items.some(it => !it.isDir)
+    function infosOf(isDir) { return info.filter((i, n) => i && items[n].isDir === isDir); }
+    function permsOf(isDir) {
+        const is = infosOf(isDir), lvl = (who) => Fs.shared(is.map(i => Fs.accessOf(i.mode, who, isDir) || "Custom"));
+        return { u: lvl("u"), g: lvl("g"), o: lvl("o") };
+    }
+    readonly property string execState: {
+        const is = infosOf(false);
+        return is.length ? Fs.shared(is.map(i => Fs.isExec(i.mode) ? "on" : "off")) : "";
+    }
+    readonly property var permsState: !info.length ? {}
+        : mixedKinds ? { files: permsOf(false), folders: permsOf(true), exec: execState, editable: permsEditable }
+        : Object.assign(permsOf(first.isDir), { exec: execState, editable: permsEditable })
+    // cls: "files", "folders" or "" (all items are one kind); who: u/g/o, or "exec" with level "on"/"off"
+    function setPerm(cls, who, level) {
+        if (!permsEditable) return;
+        const isDir = cls === "folders" || (cls === "" && first.isDir), byMode = {};
+        info.forEach((i, n) => {
+            if (!i || items[n].isDir !== isDir) return;
+            const m = who === "exec" ? Fs.withExec(i.mode, level === "on") : Fs.withAccess(i.mode, who, level, isDir);
+            if (m !== i.mode) (byMode[m] = byMode[m] ?? []).push(items[n].path);
+        });
+        const its = items, modes = Object.keys(byMode);
+        let left = modes.length;
+        // Afterwards the rows show what stat says, also when chmod failed
+        const refresh = () => { if (--left === 0) Fs.props(its.map(it => it.path), (list) => { if (root.items === its) root.info = list; }); };
+        modes.forEach(m => Fs.chmod(Number(m), byMode[m], refresh));
+    }
 
     property bool renaming: false
     function rename(name) {
@@ -167,7 +198,8 @@ FocusScope {
                 id: page
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                sourceComponent: root.current === "General" ? general : null
+                sourceComponent: root.current === "General" ? general
+                               : root.current === "Permissions" ? permissions : null
             }
         }
     }
@@ -181,6 +213,11 @@ FocusScope {
         textFormat: Text.PlainText
         wrapMode: Text.WrapAnywhere
         color: Theme.text; font.family: Theme.font; font.pixelSize: 13
+    }
+
+    Component {
+        id: permissions
+        PropsPermissions { props: root }
     }
 
     Component {

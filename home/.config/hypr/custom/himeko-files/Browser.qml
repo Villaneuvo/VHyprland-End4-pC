@@ -916,6 +916,11 @@ FocusScope {
         }
         function propsTab(name: string): void { propsLoader.item?.setTab(name); }
         function propsRename(name: string): void { propsLoader.item?.rename(name); }
+        // who: u|g|o|exec, prefixed files:/folders: when both kinds are selected; level: the chip text or on/off
+        function propsSet(who: string, level: string): void {
+            const i = who.indexOf(":");
+            propsLoader.item?.setPerm(i < 0 ? "" : who.slice(0, i), who.slice(i + 1), level);
+        }
         function propsState(): string {
             const p = propsLoader.item;
             return JSON.stringify({ open: root.propsItems !== null, tab: p ? p.current : "", tabs: p ? p.tabs : [],
