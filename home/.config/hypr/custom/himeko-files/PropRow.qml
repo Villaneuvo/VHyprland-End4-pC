@@ -55,7 +55,7 @@ Rectangle {
             visible: root.kind === "property"
             Layout.fillWidth: true
             spacing: 2
-            Text { text: root.title; color: Theme.textDim; font.family: Theme.font; font.pixelSize: 12 }
+            Text { text: root.title; textFormat: Text.PlainText; color: Theme.textDim; font.family: Theme.font; font.pixelSize: 12 }
             TextEdit {
                 Layout.fillWidth: true
                 text: root.value

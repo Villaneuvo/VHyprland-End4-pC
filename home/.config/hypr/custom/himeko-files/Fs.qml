@@ -248,9 +248,12 @@ Singleton {
             if (cb) cb(code === 0);
         });
     }
-    // Symbolic modes for everything you own inside dir: cb(changed, skipped)
+    // Symbolic modes for everything you own inside dir (never .ssh/.gnupg): cb(changed, skipped, unreachable)
     function chmodTree(dir, filesSym, dirsSym, cb) {
-        run([ops, "chmodtree", dir, filesSym, dirsSym], (text) => { const f = text.trim().split("\t"); cb(Number(f[0] || 0), Number(f[1] || 0)); });
+        run([ops, "chmodtree", dir, filesSym, dirsSym], (text) => {
+            const f = text.trim().split("\t");
+            cb(Number(f[0] || 0), Number(f[1] || 0), Number(f[2] || 0));
+        });
     }
     function groups(cb) { run([ops, "groups"], (text) => cb(lines(text))); }
     function umask(cb) { run([ops, "umask"], (text) => cb(parseInt(text.trim(), 8))); }

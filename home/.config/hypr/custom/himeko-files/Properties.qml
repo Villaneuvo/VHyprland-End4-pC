@@ -114,9 +114,10 @@ FocusScope {
     function applyEnclosed() {
         if (enclosedBusy || !enclosed.files || !one || !first.isDir || !permsEditable) return;
         enclosedBusy = true;
-        Fs.chmodTree(first.path, Fs.symbolicAll(enclosed.files, false), Fs.symbolicAll(enclosed.folders, true), (changed, skipped) => {
+        Fs.chmodTree(first.path, Fs.symbolicAll(enclosed.files, false), Fs.symbolicAll(enclosed.folders, true), (changed, skipped, unreachable) => {
             const n = (x) => String(x).replace(/\B(?=(\d{3})+(?!\d))/g, ",");   // root may be gone: no helpers from it
-            Fs.toast("Changed permissions of " + n(changed) + (changed === 1 ? " item" : " items") + (skipped ? ", " + n(skipped) + " skipped" : ""), false);
+            Fs.toast("Changed permissions of " + n(changed) + (changed === 1 ? " item" : " items") + (skipped ? ", " + n(skipped) + " skipped" : "")
+                     + (unreachable ? ", " + n(unreachable) + " couldn't be reached" : ""), false);
             try { root.enclosedBusy = false; if (root.page === "Enclosed") root.goPage("Permissions"); } catch (e) {}
         });
     }

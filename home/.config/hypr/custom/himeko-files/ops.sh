@@ -17,7 +17,7 @@
 #   ops.sh mimedefault MIME APP.desktop  -> sets the default app in the mimeapps file this session reads first
 #   ops.sh chgrp GROUP PATH...           -> chgrp, symlinks skipped
 #   ops.sh chmodtree DIR FILESYM DIRSYM  -> symbolic modes for what you own inside DIR (not DIR, never symlinks);
-#                                           prints "changed<TAB>skipped"
+#                                           prints "changed<TAB>skipped<TAB>unreachable" (.ssh/.gnupg skipped)
 #   ops.sh umask | groups                -> the umask (0002) | your groups, one per line
 #   ops.sh fontstyle FONT                -> its style name ("Bold", "Italic", …)
 #   ops.sh text FILE                     -> its first 256 KB; exit 3 (no output) when they hold a NUL byte (binary)
@@ -156,13 +156,16 @@ meta)
            ["Video", (if $v then "\($v.codec_name), \($v.width) × \($v.height)" + (($v.avg_frame_rate | fps) as $f | if $f then ", \($f) fps" else "" end) else null end)],
            ["Audio", (if $a then "\($a.codec_name), \($a.channels) ch, \($a.sample_rate) Hz" else null end)],
            ["Bitrate", (.format.bit_rate | if . then "\(tonumber / 1000 | round) kb/s" else null end)]]
-        | .[] | select(.[1] != null and .[1] != "") | "\(.[0])\t\(.[1])"' 2>/dev/null ;;
+        | .[] | select(.[1] != null and .[1] != "") | "\(.[0])\t\(.[1] | tostring | gsub("[\t\r\n]+"; " "))"' 2>/dev/null ;;
     pdf) { sandbox "$src" pdfinfo "$in" 2>/dev/null; unsandbox; } |
         awk '{ k = $0; sub(/:.*/, "", k); v = $0; sub(/^[^:]*: */, "", v) }
              k ~ /^(Pages|Title|Author|Subject|Creator|Producer|Page size|PDF version)$/ { print k "\t" v }' ;;
     font) { sandbox "$src" fc-scan --format 'Family\t%{family[0]}\nStyle\t%{style[0]}\nVersion\t%{fontversion}\nFoundry\t%{foundry}\n' "$in" 2>/dev/null; unsandbox; } |
         awk -F'\t' -v OFS='\t' '$1 == "Version" && $2 != "" { $2 = sprintf("%.3f", $2 / 65536) } $1 == "Foundry" && $2 == "unknown" { $2 = "" } { print }' ;;
-    esac | awk -F'\t' '$2 !~ /^ *$/' ;;
+    esac |
+    # Only known labels pass: a newline inside a value would otherwise start a line whose "label" is file text
+    awk -F'\t' -v ok='Dimensions|Color|Bit depth|Camera|Taken|Exposure|Aperture|ISO|Focal length|Orientation|Duration|Title|Artist|Album|Year|Video|Audio|Bitrate|Pages|Author|Subject|Creator|Producer|Page size|PDF version|Family|Style|Version|Foundry' \
+        'BEGIN { n = split(ok, a, "|"); for (i = 1; i <= n; i++) known[a[i]] = 1 } ($1 in known) && $2 !~ /^ *$/' ;;
 mimedefault)
     mime=$1 id=$2 cfg=${XDG_CONFIG_HOME:-$HOME/.config} desk=${XDG_CURRENT_DESKTOP:-}; desk=${desk%%:*}
     f=$cfg/mimeapps.list
@@ -181,13 +184,19 @@ chgrp)
     exit $ok ;;
 chmodtree)
     dir=$1 fsym=$2 dsym=$3 me_=$(id -u)
-    # -type f/-type d never match symlinks and find doesn't follow them: links and their targets stay as they are
-    # Count first and change folders last, deepest first (-depth): a level without x would lock find out of the rest
-    changed=$(find "$dir" -mindepth 1 -user "$me_" \( -type f -o -type d \) -printf x 2>/dev/null | wc -c)
-    skipped=$(find "$dir" -mindepth 1 ! -user "$me_" \( -type f -o -type d \) -printf x 2>/dev/null | wc -c)
-    find "$dir" -mindepth 1 -user "$me_" -type f -exec chmod -- "$fsym" {} + 2>/dev/null
-    find "$dir" -depth -mindepth 1 -user "$me_" -type d -exec chmod -- "$dsym" {} + 2>/dev/null
-    printf '%s\t%s\n' "$changed" "$skipped" ;;
+    # .ssh and .gnupg are never touched: keys there must stay private (ssh refuses group-readable ones)
+    walk() { find "$dir" -mindepth 1 \( -name .ssh -o -name .gnupg \) -prune -o "$@"; }
+    # Open every folder of yours first; \; runs before find goes in, so a locked level doesn't hide the next one
+    walk -user "$me_" -type d ! -perm -u=rx -exec chmod u+rx -- {} \; 2>/dev/null
+    # Count before changing; -type f/-type d never match symlinks and find doesn't follow them
+    changed=$(walk -user "$me_" \( -type f -o -type d \) -printf x 2>/dev/null | wc -c)
+    total=$(find "$dir" -mindepth 1 \( -type f -o -type d \) -printf x 2>/dev/null | wc -c)
+    unreachable=$(find "$dir" -mindepth 1 2>&1 >/dev/null | grep -c .)
+    walk -user "$me_" -type f -exec chmod -- "$fsym" {} + 2>/dev/null
+    # Folders last, deepest first (-depth): a level without x would lock find out of the rest
+    find "$dir" -depth -mindepth 1 -user "$me_" -type d ! -path "*/.ssh" ! -path "*/.ssh/*" ! -path "*/.gnupg" ! -path "*/.gnupg/*" \
+        -exec chmod -- "$dsym" {} + 2>/dev/null
+    printf '%s\t%s\t%s\n' "$changed" "$((total - changed))" "$unreachable" ;;
 umask) umask ;;
 groups) id -nG | tr ' ' '\n' ;;
 fontstyle)
@@ -360,11 +369,22 @@ selftest)
     check "chmodtree folders" "$(stat -c %a "$t/tree/sub")" "755"
     check "chmodtree not the folder itself" "$(stat -c %a "$t/tree")" "$tm"
     check "chmodtree leaves link targets" "$(stat -c %a "$t/target")" "600"
-    check "chmodtree output" "$out" "4"$'\t'"0"
+    check "chmodtree output" "$(cut -f1,2 <<<"$out")" "4"$'\t'"0"
     mkdir -p "$t/lock/a/b"; out=$("$me" chmodtree "$t/lock" "u-w" "u+r,u-wx")
     chmod u+x "$t/lock/a"   # it lost x as asked; give it back to look inside
     check "chmodtree owner without x reaches the deepest folder" "$(stat -c %a "$t/lock/a/b" 2>/dev/null)$(cut -f1 <<<"$out")" "4752"
     chmod -R u+rwx "$t/lock"
+    # ---- review fixes: meta labels are never file text, locked folders, private key folders ----
+    ffmpeg -loglevel error -y -f lavfi -i sine=duration=1 -metadata title="$(printf 'x\n<img src=y>\tz')" "$t/inj.mp3"
+    check "meta: a newline in a tag can't make a label" "$("$me" meta "$t/inj.mp3" audio | cut -f1 | grep -cv -E '^(Duration|Title|Artist|Album|Year|Video|Audio|Bitrate)$')" "0"
+    check "meta: the tag stays one value" "$("$me" meta "$t/inj.mp3" audio | grep '^Title' | cut -f2)" "x <img src=y> z"
+    mkdir -p "$t/L/a/b/c"; : >"$t/L/a/b/c/f"; chmod 600 "$t/L/a/b/c" "$t/L/a/b" "$t/L/a"
+    out=$("$me" chmodtree "$t/L" "u+rw" "u+rwx")
+    check "chmodtree opens locked folders in one run" "$(stat -c %a "$t/L/a" "$t/L/a/b" "$t/L/a/b/c" | cut -c1 | tr -d '\n')$(cut -f1 <<<"$out")" "7774"
+    mkdir -p "$t/H/.ssh" "$t/H/.gnupg"; : >"$t/H/.ssh/id_x"; : >"$t/H/pub"; chmod 600 "$t/H/.ssh/id_x"; chmod 700 "$t/H/.ssh"
+    out=$("$me" chmodtree "$t/H" "g+r,o+r" "g+rx,o+rx")
+    check "chmodtree leaves .ssh and .gnupg alone" "$(stat -c %a "$t/H/.ssh" "$t/H/.ssh/id_x" | tr '\n' ' ')$(stat -c %a "$t/H/pub")" "700 600 664"
+    check "chmodtree counts them as skipped" "$(cut -f1,2 <<<"$out")" "1"$'\t'"3"
     exit $fail ;;
 *) echo "usage: see the header of $0" >&2; exit 2 ;;
 esac
