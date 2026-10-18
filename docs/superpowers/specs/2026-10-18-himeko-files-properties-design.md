@@ -47,7 +47,7 @@ Ctrl+Tab / Ctrl+Shift+Tab switch tabs. The tab last used is remembered for the s
 | Size | files "2.4 MB (2,412,345 bytes)"; folders "124 items, totalling 3.2 GB", counted live | total of all, folders counted live |
 | Link target | for symlinks: where it points (or "broken link") | — |
 | Location | the parent folder, click to go there | the common parent |
-| Modified / Accessed / Created | full dates, e.g. "Saturday, 18 October 2026, 16:30" (Created only when the filesystem records it) | — |
+| Modified / Accessed / Created | full dates, e.g. "Sunday, 18 October 2026, 16:30" (Created only when the filesystem records it) | — |
 | Free space | folders: "241 GB free of 466 GB" on that filesystem | — |
 
 Live folder counting: one `find` process per card streams running totals (items, bytes) every few thousand entries

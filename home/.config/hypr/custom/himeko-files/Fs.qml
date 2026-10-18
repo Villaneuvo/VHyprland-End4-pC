@@ -26,6 +26,20 @@ Singleton {
             onExited: (code) => { if (cb) cb(out.text, code, err.text); destroy(); }
         }
     }
+    // ---- run a command, get its stdout line by line (stop it with running = false) ----
+    Component {
+        id: streamComp
+        Process {
+            property var cb
+            stdout: SplitParser { onRead: (line) => cb(line) }
+            onExited: destroy()
+        }
+    }
+    function stream(cmd, cb) {
+        const p = streamComp.createObject(root, { command: cmd, cb: cb });
+        p.running = true;
+        return p;
+    }
     function run(cmd, cb) {
         const p = procComp.createObject(root, { command: cmd, cb: cb });
         p.running = true;
@@ -155,6 +169,67 @@ Singleton {
     }
     // PDF wheel: one page per notch (120); a touchpad's small deltas add up instead of flipping a page each
     function wheelStep(acc, dy) { const a = acc + dy, n = Math.trunc(a / 120); return { flip: -n + 0, acc: a - n * 120 + 0 }; }
+    // ---- properties: permission levels as Nautilus words them, size and date text ----
+    readonly property var fileLevels: ["None", "Read-only", "Read and write"]
+    readonly property var dirLevels: ["None", "List files only", "Access files", "Create and delete files"]
+    readonly property var dirBits: ({ "None": 0, "List files only": 4, "Access files": 5, "Create and delete files": 7 })
+    readonly property var fileBits: ({ "None": 0, "Read-only": 4, "Read and write": 6 })
+    readonly property var shiftOf: ({ u: 6, g: 3, o: 0 })
+    function levels(isDir) { return isDir ? dirLevels : fileLevels; }
+    // "" = a combination the levels don't name (shown as "Custom"); files ignore x (its own toggle)
+    function accessOf(mode, who, isDir) {
+        const b = (mode >> shiftOf[who]) & 7;
+        if (isDir) return Object.keys(dirBits).find(k => dirBits[k] === b) ?? "";
+        return Object.keys(fileBits).find(k => fileBits[k] === (b & 6)) ?? "";
+    }
+    // Only that class's bits change (setuid etc. kept); files keep the class's x
+    function withAccess(mode, who, level, isDir) {
+        const sh = shiftOf[who], bits = isDir ? dirBits[level] : fileBits[level] | ((mode >> sh) & 1);
+        return (mode & ~(7 << sh)) | (bits << sh);
+    }
+    function isExec(mode) { return (mode & 0o111) !== 0; }
+    function withExec(mode, on) { return on ? mode | ((mode & 0o444) >> 2) : mode & ~0o111; }   // x where readable
+    function shared(values) { return values.every(v => v === values[0]) ? values[0] : "Mixed"; }
+    function sizeText(b) {
+        const exact = String(b).replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " bytes";
+        return b < 1024 ? exact : size(b) + " (" + exact + ")";
+    }
+    readonly property var dayNames: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+    readonly property var monthNames: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+    function fullDate(d) {
+        return dayNames[d.getDay()] + ", " + d.getDate() + " " + monthNames[d.getMonth()] + " " + d.getFullYear() + ", "
+             + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    }
+    property string propsTab: "General"    // the Properties tab last used (this session)
+    // ops.sh props → [{ mode, owner, group, mine, size, atime, mtime, birth, type, target, mime, description, avail, total }]
+    // (null for a path it couldn't read)
+    function props(paths, cb) {
+        run([ops, "props"].concat(paths), (text) => cb(text.split("\n").slice(0, paths.length).map(l => {
+            if (l === "!" || !l) return null;
+            const f = l.split("\t"), t = (s) => new Date(Number(s) * 1000);
+            return { mode: parseInt(f[0], 8), owner: f[1], group: f[2], mine: f[3] === "1", size: Number(f[4]), atime: t(f[5]),
+                     mtime: t(f[6]), birth: Number(f[7]) > 0 ? t(f[7]) : null, type: f[8], target: f[9], mime: f[10],
+                     description: f[11], avail: Number(f[12] || 0), total: Number(f[13] || 0) };
+        })));
+    }
+    // Live folder totals: cb(items, bytes, done) as ops.sh dirsize streams them; returns the Process (running = false stops)
+    function dirSize(paths, cb) {
+        return stream([ops, "dirsize"].concat(paths), (l) => {
+            const f = l.split("\t");
+            if (f[0] === "done") cb(Number(f[1]), Number(f[2]), true);
+            else cb(Number(f[0]), Number(f[1]), false);
+        });
+    }
+    function chmod(mode, paths, cb) {
+        run([ops, "chmod", mode.toString(8)].concat(paths), (t, code, err) => {
+            if (code) failed(err.trim() || "Couldn't change the permissions");
+            if (cb) cb(code === 0);
+        });
+    }
+    function meta(path, kind, cb) {
+        run([ops, "meta", path, kind], (text) => cb(lines(text).map(l => { const i = l.indexOf("\t"); return [l.slice(0, i), l.slice(i + 1)]; })));
+    }
+    function setDefaultApp(mime, id, cb) { run([ops, "mimedefault", mime, id], (t, code) => cb(code === 0)); }
     // Left/Right in Quick Look: stops at the ends; an item no longer listed starts from the first
     function stepIndex(i, d, n) { return i < 0 ? 0 : Math.max(0, Math.min(n - 1, i + d)); }
 

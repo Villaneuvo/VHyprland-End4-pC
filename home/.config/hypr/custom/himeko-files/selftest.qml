@@ -84,6 +84,25 @@ ShellRoot {
         check("wheel: deltas add up", Fs.wheelStep(-105, -15), { flip: 1, acc: 0 });
         check("wheel: two notches up", Fs.wheelStep(0, 240), { flip: -2, acc: 0 });
         check("wheel: back and forth", Fs.wheelStep(-60, 60), { flip: 0, acc: 0 });
+        // ---- properties rules ----
+        check("access: file rw", Fs.accessOf(0o644, "u", false), "Read and write");
+        check("access: file r", Fs.accessOf(0o644, "g", false), "Read-only");
+        check("access: file none", Fs.accessOf(0o600, "o", false), "None");
+        check("access: dir rwx", Fs.accessOf(0o755, "u", true), "Create and delete files");
+        check("access: dir r-x", Fs.accessOf(0o755, "g", true), "Access files");
+        check("access: dir r--", Fs.accessOf(0o744, "g", true), "List files only");
+        check("access: dir custom", Fs.accessOf(0o730, "g", true), "");
+        check("withAccess: file others none", Fs.withAccess(0o644, "o", "None", false), 0o640);
+        check("withAccess: keeps setuid", Fs.withAccess(0o4755, "g", "List files only", true), 0o4745);
+        check("withAccess: file keeps x", Fs.withAccess(0o755, "u", "Read-only", false), 0o555);
+        check("exec: off", Fs.isExec(0o644), false);
+        check("exec: on where readable", Fs.withExec(0o640, true), 0o750);
+        check("exec: clear", Fs.withExec(0o755, false), 0o644);
+        check("shared: same", Fs.shared(["a", "a"]), "a");
+        check("shared: mixed", Fs.shared(["a", "b"]), "Mixed");
+        check("sizeText", Fs.sizeText(2412345), "2.3 MB (2,412,345 bytes)");
+        check("sizeText small", Fs.sizeText(512), "512 bytes");
+        check("fullDate", Fs.fullDate(new Date(2026, 9, 18, 16, 30)), "Sunday, 18 October 2026, 16:30");
         // ---- motion tokens (Theme) ----
         check("curve: fastSpatial", Theme.curve.fastSpatial, [0.42, 1.67, 0.21, 0.90, 1, 1]);
         check("curve: enter", Theme.curve.enter, [0.05, 0.7, 0.1, 1, 1, 1]);

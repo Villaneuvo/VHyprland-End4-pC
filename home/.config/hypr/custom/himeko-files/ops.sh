@@ -100,7 +100,7 @@ text)
 props)
     myuid=$(id -u)
     for p in "$@"; do
-        st=$(stat -c $'%a\t%U\t%G\t%u\t%s\t%X\t%Y\t%W' -- "$p") || continue
+        st=$(stat -c $'%a\t%U\t%G\t%u\t%s\t%X\t%Y\t%W' -- "$p" 2>/dev/null) || { echo '!'; continue; }   # keeps lines and paths aligned
         if [ -L "$p" ]; then type=link; tgt=$(readlink -- "$p"); [ -e "$p" ] || tgt='!broken'
         elif [ -d "$p" ]; then type=dir; tgt=; else type=file; tgt=; fi
         info=$(gio info -a standard::content-type,standard::description -- "$p" 2>/dev/null)
