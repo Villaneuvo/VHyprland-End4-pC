@@ -1,127 +1,78 @@
 import QtQuick
 import QtQuick.Layouts
 
-// Properties › Permissions: owner/group, access per class as Nautilus words it, and "allow executing" for files.
-// Choices apply at once (Properties.setPerm); read-only when you don't own every item or it's a link.
+// Properties › Permissions, as GNOME Files lays it out: Owner, Group, Other Users, each with its Access dropdown (Files
+// and Folders rows when both are selected), the executable switch for files and the enclosed-files button for a folder.
+// Read-only rows (no chevron) when you don't own every item or it's a link.
 ColumnLayout {
     id: root
     required property Item props
-    readonly property var fi: props.firstInfo
+    readonly property var st: props.permsState
     readonly property bool editable: props.permsEditable
-    spacing: 10
+    readonly property bool mixed: props.mixedKinds
+    readonly property var fi: props.firstInfo
+    function lvl(cls, who) { return !st ? "" : cls ? (st[cls] ? st[cls][who] : "") : st[who] ?? ""; }
+    spacing: 12
 
-    GridLayout {
-        columns: 2
-        columnSpacing: 14
-        rowSpacing: 6
-        visible: root.fi !== null
-        Text { text: "Owned by"; color: Theme.textDim; font.family: Theme.font; font.pixelSize: 13 }
-        Text {
-            text: !root.fi ? "" : root.props.info.every(i => i && i.owner === root.fi.owner) ? (root.fi.mine ? "You (" + root.fi.owner + ")" : root.fi.owner) : "Mixed"
-            textFormat: Text.PlainText; color: Theme.text; font.family: Theme.font; font.pixelSize: 13
-        }
-        Text { text: "Group"; color: Theme.textDim; font.family: Theme.font; font.pixelSize: 13 }
-        Text {
-            text: !root.fi ? "" : root.props.info.every(i => i && i.group === root.fi.group) ? root.fi.group : "Mixed"
-            textFormat: Text.PlainText; color: Theme.text; font.family: Theme.font; font.pixelSize: 13
-        }
+    component Access: PropRow {
+        property string cls: ""
+        property string who: "u"
+        kind: "dropdown"
+        key: "access:" + (cls ? cls + ":" : "") + who
+        title: cls === "files" ? "Files" : cls === "folders" ? "Folders" : "Access"
+        value: root.lvl(cls, who)
+        active: root.editable
+        show: cls === "" ? !root.mixed : root.mixed
+        onClicked: root.props.openKey(key, null)
     }
 
-    Repeater {
-        // One block per class present: files and folders get their own rows when both are selected
-        model: root.props.mixedKinds ? [{ cls: "files", isDir: false }, { cls: "folders", isDir: true }]
-                                     : [{ cls: "", isDir: root.props.first.isDir }]
-        delegate: ColumnLayout {
-            id: blockCol
-            required property var modelData
-            readonly property var state: modelData.cls ? root.props.permsState[modelData.cls] : root.props.permsState
-            Layout.fillWidth: true
-            spacing: 6
-            Text {
-                visible: modelData.cls !== ""
-                text: modelData.isDir ? "Folders" : "Files"
-                color: Theme.text; font.family: Theme.font; font.pixelSize: 13; font.weight: 600
-            }
-            Repeater {
-                model: [["u", "Owner"], ["g", "Group"], ["o", "Others"]]
-                delegate: RowLayout {
-                    id: classRow
-                    required property var modelData
-                    readonly property string value: blockCol.state ? blockCol.state[modelData[0]] ?? "" : ""
-                    Layout.fillWidth: true
-                    spacing: 6
-                    Text {
-                        Layout.preferredWidth: 56
-                        text: modelData[1]
-                        color: Theme.textDim; font.family: Theme.font; font.pixelSize: 12
-                    }
-                    Flow {
-                        Layout.fillWidth: true
-                        spacing: 4
-                        Repeater {
-                            model: Fs.levels(blockCol.modelData.isDir)
-                            delegate: Rectangle {
-                                required property string modelData
-                                readonly property bool on: modelData === classRow.value
-                                implicitWidth: lvl.implicitWidth + 20; implicitHeight: 28; radius: 14
-                                opacity: root.editable ? 1 : 0.55
-                                color: on ? Theme.secondaryContainer : area.containsMouse && root.editable ? Theme.hover : "transparent"
-                                border.width: on ? 0 : 1
-                                border.color: Theme.alpha(Theme.text, 0.12)
-                                Text {
-                                    id: lvl
-                                    anchors.centerIn: parent
-                                    text: parent.modelData
-                                    color: parent.on ? Theme.inkSecondaryContainer : Theme.text
-                                    font.family: Theme.font; font.pixelSize: 12
-                                }
-                                MouseArea {
-                                    id: area
-                                    anchors.fill: parent
-                                    enabled: root.editable
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: root.props.setPerm(blockCol.modelData.cls, classRow.modelData[0], parent.modelData)
-                                }
-                            }
-                        }
-                        Text {
-                            visible: classRow.value === "Mixed" || classRow.value === "Custom"
-                            text: classRow.value
-                            color: Theme.textDim; font.family: Theme.font; font.pixelSize: 12
-                            height: 28; verticalAlignment: Text.AlignVCenter
-                        }
-                    }
-                }
-            }
-            // Files: the executable bit
-            RowLayout {
-                visible: !blockCol.modelData.isDir
-                spacing: 10
-                Rectangle {
-                    readonly property string exec: root.props.execState
-                    implicitWidth: 40; implicitHeight: 22; radius: 11
-                    opacity: root.editable ? 1 : 0.55
-                    color: exec === "on" ? Theme.primary : Theme.alpha(Theme.text, 0.18)
-                    Rectangle {
-                        width: 16; height: 16; radius: 8
-                        anchors.verticalCenter: parent.verticalCenter
-                        x: parent.exec === "on" ? parent.width - width - 3 : parent.exec === "Mixed" ? (parent.width - width) / 2 : 3
-                        color: parent.exec === "on" ? Theme.inkPrimary : Theme.text
-                        Behavior on x { Anim { kind: "fastSpatial" } }
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        enabled: root.editable
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.props.setPerm(blockCol.modelData.cls, "exec", parent.exec === "on" ? "off" : "on")
-                    }
-                }
-                Text { text: "Allow executing file as program"; color: Theme.text; font.family: Theme.font; font.pixelSize: 13 }
-            }
+    PropGroup {
+        PropRow {
+            kind: "dropdown"; active: false
+            title: "Owner"
+            value: !root.fi ? "" : root.props.info.every(i => i && i.owner === root.fi.owner) ? root.fi.owner + (root.fi.mine ? " (You)" : "") : "Mixed"
+        }
+        Access { who: "u" }
+        Access { who: "u"; cls: "files" }
+        Access { who: "u"; cls: "folders" }
+    }
+    PropGroup {
+        PropRow {
+            kind: "dropdown"; key: "group"
+            title: "Group"
+            value: root.props.groupState
+            active: root.props.canGroup && root.props.groups.length > 0
+            onClicked: root.props.openKey(key, null)
+        }
+        Access { who: "g" }
+        Access { who: "g"; cls: "files" }
+        Access { who: "g"; cls: "folders" }
+    }
+    PropGroup {
+        title: "Other Users"
+        Access { who: "o" }
+        Access { who: "o"; cls: "files" }
+        Access { who: "o"; cls: "folders" }
+    }
+    PropGroup {
+        PropRow {
+            kind: "switch"
+            show: root.props.items.some(it => !it.isDir)
+            title: "Allow Executing File as Program"
+            checked: root.props.execState === "on"
+            mixed: root.props.execState === "Mixed"
+            active: root.editable
+            onClicked: root.props.setPerm(root.mixed ? "files" : "", "exec", root.props.execState === "on" ? "off" : "on")
         }
     }
-
+    PropGroup {
+        PropRow {
+            kind: "button"
+            show: root.props.one && root.props.first.isDir && root.editable
+            title: "Change Permissions for Enclosed Files…"
+            onClicked: root.props.goPage("Enclosed")
+        }
+    }
     Text {
         visible: !root.editable && root.props.info.length > 0
         Layout.fillWidth: true

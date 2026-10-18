@@ -36,6 +36,7 @@ FocusScope {
         if (name === page || (name !== "" && name !== "Enclosed" && pages.indexOf(name) < 0)) return;
         pageDir = name === "" || (page === "Enclosed" && name === "Permissions") ? -1 : 1;
         page = name;
+        if (name === "Permissions" && !groups.length) Fs.groups((list) => root.groups = list);
         slide.restart();
     }
     // Esc: the popover, else the rename field, else back a page, else close the card
@@ -91,9 +92,18 @@ FocusScope {
         const is = infosOf(false);
         return is.length ? Fs.shared(is.map(i => Fs.isExec(i.mode) ? "on" : "off")) : "";
     }
+    // ---- group: chgrp works without root for your own files and the groups you're in ----
+    property var groups: []                // your groups (loaded when the Permissions page opens)
+    readonly property bool canGroup: permsEditable
+    readonly property string groupState: info.length ? Fs.shared(info.map(i => i ? i.group : "")) : ""
+    function setGroup(name) {
+        if (!canGroup || !name || name === groupState) return;
+        const its = items;
+        Fs.chgrp(name, its.map(it => it.path), () => Fs.props(its.map(it => it.path), (list) => { if (root.items === its) root.info = list; }));
+    }
     readonly property var permsState: !info.length ? {}
-        : mixedKinds ? { files: permsOf(false), folders: permsOf(true), exec: execState, editable: permsEditable }
-        : Object.assign(permsOf(first.isDir), { exec: execState, editable: permsEditable })
+        : Object.assign(mixedKinds ? { files: permsOf(false), folders: permsOf(true) } : permsOf(first.isDir),
+                        { exec: execState, editable: permsEditable, group: groupState, canGroup: canGroup })
     // cls: "files", "folders" or "" (all items are one kind); who: u/g/o, or "exec" with level "on"/"off"
     // A click while a change is still running waits (latest wins) and is worked out from the refreshed modes,
     // so quick clicks can't undo each other
@@ -191,6 +201,8 @@ FocusScope {
             return { choices: Fs.levelsFor(who, isDir), current: st ? st[who] : "", searchable: false,
                      pick: (l) => setPerm(cls, who, l) };
         }
+        if (key === "group" && canGroup)
+            return { choices: groups, current: groupState, searchable: true, pick: (g) => setGroup(g) };
         return null;
     }
     function findRow(item, key) {

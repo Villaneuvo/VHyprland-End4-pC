@@ -918,6 +918,7 @@ FocusScope {
         function propsBack(): void { propsLoader.item?.back(); }
         function propsOpen(key: string): void { propsLoader.item?.openKey(key, null); }
         function propsPick(choice: string): void { propsLoader.item?.pick(choice); }
+        function propsGroup(name: string): void { propsLoader.item?.setGroup(name); }
         function propsRename(name: string): void { propsLoader.item?.rename(name); }
         function propsDefault(id: string): void { propsLoader.item?.setDefault(id); }
         // who: u|g|o|exec, prefixed files:/folders: when both kinds are selected; level: the chip text or on/off
