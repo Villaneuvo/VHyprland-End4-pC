@@ -113,6 +113,8 @@ straight from end4-pC (it follows the wallpaper), the Material Symbols icon font
 - **Previews**: PDF pages, album covers and fonts get real thumbnails (the same thumbnailers Nautilus uses, run in a
   bwrap sandbox). **Space** opens Quick Look: images, video and audio playing, PDF pages, text and fonts; ←/→ walks
   the folder, Enter opens.
+- **Properties** (Alt+Enter): exact size and live folder totals, full dates, permissions you can change, the default app
+  for the type, and photo/song/video/PDF/font details.
 
 Not there yet (use **Show in Dolphin** from its menus): drag and drop, split view, network places, tags.
 File operations live in `ops.sh`; `ops.sh selftest` checks them (naming, copy/move, zip, trash and restore).
