@@ -197,7 +197,7 @@
                 "size": 274.7109375,
                 "x": 1032,
                 "y": 708,
-                "z": 26
+                "z": 33
             },
             "customText": {
                 "alignment": "center",
@@ -837,7 +837,7 @@
             "blurredBackground": true,
             "enable": true,
             "shapeArt": false,
-            "showLyrics": true
+            "showLyrics": false
         },
         "mediaPlayer": false,
         "quickSliders": {
