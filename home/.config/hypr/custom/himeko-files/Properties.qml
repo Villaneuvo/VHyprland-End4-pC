@@ -21,7 +21,10 @@ FocusScope {
 
     // ---- tabs ----
     readonly property bool oneFile: one && !first.isDir
-    readonly property var tabs: ["General", "Permissions"].concat(oneFile ? ["Open With"] : [], metaRows.length ? ["Details"] : [])
+    // In the Trash only General: renaming or changing a trashed file would break Restore (its .trashinfo)
+    readonly property var tabs: tab.inTrash ? ["General"]
+        : ["General", "Permissions"].concat(oneFile ? ["Open With"] : [], metaRows.length ? ["Details"] : [])
+    readonly property bool canRename: one && !first.isCurrent && !tab.inTrash
     readonly property string current: tabs.indexOf(Fs.propsTab) >= 0 ? Fs.propsTab : "General"
     function setTab(name) { if (tabs.indexOf(name) >= 0) Fs.propsTab = name; }
 
@@ -73,8 +76,13 @@ FocusScope {
         : mixedKinds ? { files: permsOf(false), folders: permsOf(true), exec: execState, editable: permsEditable }
         : Object.assign(permsOf(first.isDir), { exec: execState, editable: permsEditable })
     // cls: "files", "folders" or "" (all items are one kind); who: u/g/o, or "exec" with level "on"/"off"
+    // A click while a change is still running waits (latest wins) and is worked out from the refreshed modes,
+    // so quick clicks can't undo each other
+    property bool permsBusy: false
+    property var pendingPerm: null
     function setPerm(cls, who, level) {
-        if (!permsEditable) return;
+        if (!permsEditable || tab.inTrash) return;
+        if (permsBusy) { pendingPerm = [cls, who, level]; return; }
         const isDir = cls === "folders" || (cls === "" && first.isDir), byMode = {};
         info.forEach((i, n) => {
             if (!i || items[n].isDir !== isDir) return;
@@ -82,9 +90,21 @@ FocusScope {
             if (m !== i.mode) (byMode[m] = byMode[m] ?? []).push(items[n].path);
         });
         const its = items, modes = Object.keys(byMode);
+        if (!modes.length) return;
+        permsBusy = true;
         let left = modes.length;
         // Afterwards the rows show what stat says, also when chmod failed
-        const refresh = () => { if (--left === 0) Fs.props(its.map(it => it.path), (list) => { if (root.items === its) root.info = list; }); };
+        const refresh = () => {
+            if (--left > 0) return;
+            Fs.props(its.map(it => it.path), (list) => {
+                root.permsBusy = false;
+                if (root.items !== its) { root.pendingPerm = null; return; }
+                root.info = list;
+                const next = root.pendingPerm;
+                root.pendingPerm = null;
+                if (next) root.setPerm(next[0], next[1], next[2]);
+            });
+        };
         modes.forEach(m => Fs.chmod(Number(m), byMode[m], refresh));
     }
 
@@ -112,7 +132,7 @@ FocusScope {
     property bool renaming: false
     function rename(name) {
         renaming = false;
-        if (!one || first.isCurrent || !name || name === first.name) return;
+        if (!canRename || !name || name === first.name) return;
         Fs.rename(first.path, name, (target) => root.renamed(target));
     }
 
@@ -275,7 +295,7 @@ FocusScope {
                 spacing: 4
                 Value { visible: !root.renaming; text: root.first.name; Layout.fillWidth: true }
                 IconButton {
-                    visible: !root.renaming && !root.first.isCurrent
+                    visible: !root.renaming && root.canRename
                     icon: "edit"; tip: "Rename"; iconSize: 16; implicitWidth: 30; implicitHeight: 30
                     onClicked: root.renaming = true
                 }

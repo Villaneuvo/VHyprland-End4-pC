@@ -100,24 +100,33 @@ text)
 props)
     myuid=$(id -u)
     for p in "$@"; do
-        st=$(stat -c $'%a\t%U\t%G\t%u\t%s\t%X\t%Y\t%W' -- "$p" 2>/dev/null) || { echo '!'; continue; }   # keeps lines and paths aligned
+        # one fork per path (stat): big selections must stay quick; stat's fields are never empty, so read is safe here
+        IFS=$'\t' read -r mode own grp uid size at mt bt < <(stat -c $'%a\t%U\t%G\t%u\t%s\t%X\t%Y\t%W' -- "$p" 2>/dev/null) ||
+            { echo '!'; continue; }   # keeps lines and paths aligned
         if [ -L "$p" ]; then type=link; tgt=$(readlink -- "$p"); [ -e "$p" ] || tgt='!broken'
         elif [ -d "$p" ]; then type=dir; tgt=; else type=file; tgt=; fi
-        mime=$(gio info -a standard::content-type -- "$p" 2>/dev/null | sed -n 's/^ *standard::content-type: //p')
-        # gio has no description for local files: shared-mime-info's English <comment> ("PNG image")
-        desc=$(sed -n 's|^ *<comment>\(.*\)</comment>|\1|p' "$HOME/.local/share/mime/$mime.xml" "/usr/share/mime/$mime.xml" 2>/dev/null |
-            head -1 | sed 's/&lt;/</g; s/&gt;/>/g; s/&amp;/\&/g')
-        avail= total=
-        [ "$type" = dir ] && read -r avail total < <(df -B1 --output=avail,size -- "$p" | tail -1)
-        uid=$(cut -f4 <<<"$st"); mine=0; [ "$uid" = "$myuid" ] && mine=1
-        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(cut -f1-3 <<<"$st")" "$mine" "$(cut -f5-8 <<<"$st")" \
-            "$type" "$tgt" "$mime" "$desc" "$avail" "$total"
+        mime= desc= avail= total=
+        # Type only for a single item (all the card shows): gio per path makes big selections take seconds
+        if [ $# -eq 1 ]; then
+            mime=$(gio info -a standard::content-type -- "$p" 2>/dev/null | sed -n 's/^ *standard::content-type: //p')
+            # gio has no description for local files: shared-mime-info's English <comment> ("PNG image")
+            [ -n "$mime" ] && desc=$(sed -n 's|^ *<comment>\(.*\)</comment>|\1|p' "$HOME/.local/share/mime/$mime.xml" "/usr/share/mime/$mime.xml" 2>/dev/null |
+                head -1 | sed 's/&lt;/</g; s/&gt;/>/g; s/&amp;/\&/g')
+            [ "$type" = dir ] && read -r avail total < <(df -B1 --output=avail,size -- "$p" | tail -1)
+        fi
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$mode" "$own" "$grp" "$([ "$uid" = "$myuid" ] && echo 1 || echo 0)" \
+            "$size" "$at" "$mt" "$bt" "$type" "$tgt" "$mime" "$desc" "$avail" "$total"
     done ;;
 dirsize)
+    # The walk runs as its own process group so a TERM (the card closing) ends find too: on a slow or hung tree
+    # awk rarely prints, so SIGPIPE alone would leave find running for minutes
+    set -m
     for p in "$@"; do
         if [ -d "$p" ] && [ ! -L "$p" ]; then find "$p" -mindepth 1 \( -type f -printf '%s\n' -o -printf '0\n' \) 2>/dev/null
         else stat -c %s -- "$p" 2>/dev/null; fi
-    done | awk '{ n++; b += $1; if (n % 5000 == 0) { print n "\t" b; fflush() } } END { print "done\t" n + 0 "\t" b + 0 }' ;;
+    done | awk '{ n++; b += $1; if (n % 5000 == 0) { print n "\t" b; fflush() } } END { print "done\t" n + 0 "\t" b + 0 }' &
+    walk=$!; trap 'kill -- -"$walk" 2>/dev/null; exit 143' TERM INT
+    wait "$walk" ;;
 chmod)
     mode=$1; shift; ok=0
     for p in "$@"; do [ -L "$p" ] && continue; chmod -- "$mode" "$p" || ok=1; done
@@ -309,6 +318,14 @@ selftest)
     printf '# hypr\n[Default Applications]\nimage/png=old.desktop\nvideo/mp4=vlc.desktop\n' >"$c/hyprland-mimeapps.list"
     check "mimedefault picks desktop file" "$(XDG_CONFIG_HOME=$c XDG_CURRENT_DESKTOP=Hyprland "$me" mimedefault image/png loupe.desktop)" "$c/hyprland-mimeapps.list"
     check "mimedefault replaces" "$(tr '\n' '|' <"$c/hyprland-mimeapps.list")" "# hypr|[Default Applications]|image/png=loupe.desktop|video/mp4=vlc.desktop|"
+    # ---- review fixes: dirsize stops with its walkers, props stays fast on big selections ----
+    "$me" dirsize / >"$t/ds.out" 2>/dev/null & ds=$!   # stdout to a file: no SIGPIPE to end the walk for us
+    sleep 0.4; kill -TERM "$ds"; sleep 0.6
+    check "dirsize killed stops find" "$(ps -eo args | awk '$1 == "find" && $2 == "/" && $3 == "-mindepth"' | wc -l)" "0"
+    for p in $(ps -eo pid,args | awk '$2 == "find" && $3 == "/" && $4 == "-mindepth" { print $1 }'); do kill "$p"; done
+    mkdir -p "$t/many"; for i in $(seq 300); do : >"$t/many/f$i"; done
+    s=$(date +%s%N); "$me" props "$t"/many/* >/dev/null
+    check "props on 300 files under 2 s" "$(( ($(date +%s%N) - s) / 1000000 < 2000 ))" "1"
     exit $fail ;;
 *) echo "usage: see the header of $0" >&2; exit 2 ;;
 esac

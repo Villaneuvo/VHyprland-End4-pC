@@ -926,6 +926,7 @@ FocusScope {
             const p = propsLoader.item;
             return JSON.stringify({ open: root.propsItems !== null, tab: p ? p.current : "", tabs: p ? p.tabs : [],
                                     name: p ? p.title : "", size: p ? p.sizeLine : "", counting: p ? p.counting : false,
+                                    canRename: p ? p.canRename : false,
                                     perms: p && p.permsState ? p.permsState : {}, apps: p && p.appCount ? p.appCount : 0,
                                     meta: p && p.metaCount ? p.metaCount : 0 });
         }
