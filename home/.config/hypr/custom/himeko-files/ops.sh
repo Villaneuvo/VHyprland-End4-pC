@@ -15,6 +15,10 @@
 #   ops.sh chmod MODE PATH...            -> chmod, symlinks skipped
 #   ops.sh meta FILE KIND                -> "Label<TAB>Value" lines (KIND image/video/audio/pdf/font; readers sandboxed)
 #   ops.sh mimedefault MIME APP.desktop  -> sets the default app in the mimeapps file this session reads first
+#   ops.sh chgrp GROUP PATH...           -> chgrp, symlinks skipped
+#   ops.sh chmodtree DIR FILESYM DIRSYM  -> symbolic modes for what you own inside DIR (not DIR, never symlinks);
+#                                           prints "changed<TAB>skipped"
+#   ops.sh umask | groups                -> the umask (0002) | your groups, one per line
 #   ops.sh fontstyle FONT                -> its style name ("Bold", "Italic", …)
 #   ops.sh text FILE                     -> its first 256 KB; exit 3 (no output) when they hold a NUL byte (binary)
 #   ops.sh thumbexts                     -> extensions that have a thumbnailer, one per line
@@ -171,6 +175,21 @@ mimedefault)
         { print }
         END { if (!seen) { print ""; print "[Default Applications]" } if (!done) print line }' "$f" >"$tmp" &&
         mv -- "$tmp" "$f" && printf '%s\n' "$f" ;;
+chgrp)
+    grp=$1; shift; ok=0
+    for p in "$@"; do [ -L "$p" ] && continue; chgrp -- "$grp" "$p" || ok=1; done
+    exit $ok ;;
+chmodtree)
+    dir=$1 fsym=$2 dsym=$3 me_=$(id -u)
+    # -type f/-type d never match symlinks and find doesn't follow them: links and their targets stay as they are
+    # Count first and change folders last, deepest first (-depth): a level without x would lock find out of the rest
+    changed=$(find "$dir" -mindepth 1 -user "$me_" \( -type f -o -type d \) -printf x 2>/dev/null | wc -c)
+    skipped=$(find "$dir" -mindepth 1 ! -user "$me_" \( -type f -o -type d \) -printf x 2>/dev/null | wc -c)
+    find "$dir" -mindepth 1 -user "$me_" -type f -exec chmod -- "$fsym" {} + 2>/dev/null
+    find "$dir" -depth -mindepth 1 -user "$me_" -type d -exec chmod -- "$dsym" {} + 2>/dev/null
+    printf '%s\t%s\n' "$changed" "$skipped" ;;
+umask) umask ;;
+groups) id -nG | tr ' ' '\n' ;;
 fontstyle)
     { sandbox "$1" fc-scan --format '%{style[0]}\n' "$(inpath "$1")" 2>/dev/null; unsandbox; } | head -1 ;;
 pages)
@@ -326,6 +345,26 @@ selftest)
     mkdir -p "$t/many"; for i in $(seq 300); do : >"$t/many/f$i"; done
     s=$(date +%s%N); "$me" props "$t"/many/* >/dev/null
     check "props on 300 files under 2 s" "$(( ($(date +%s%N) - s) / 1000000 < 2000 ))" "1"
+    # ---- properties redesign: chgrp, chmodtree, umask, groups ----
+    g=$(id -gn); printf 'x' >"$t/cg.txt"
+    "$me" chgrp "$g" "$t/cg.txt"; check "chgrp own group" "$?" "0"
+    check "chgrp result" "$(stat -c %G "$t/cg.txt")" "$g"
+    check "groups lists mine" "$("$me" groups | grep -cx "$g")" "1"
+    check "umask" "$("$me" umask)" "$(umask)"
+    mkdir -p "$t/tree/sub"; printf 'a' >"$t/tree/f"; printf 'b' >"$t/tree/sub/g"; printf '#!/bin/sh\n' >"$t/tree/run.sh"
+    chmod 600 "$t/tree/f" "$t/tree/sub/g"; chmod 700 "$t/tree/run.sh" "$t/tree/sub"; printf 't' >"$t/target"; chmod 600 "$t/target"
+    ln -s "$t/target" "$t/tree/link"; tm=$(stat -c %a "$t/tree")
+    out=$("$me" chmodtree "$t/tree" "g+r,g-w,o+r,o-w" "g+rx,g-w,o+rx,o-w")
+    check "chmodtree files" "$(stat -c %a "$t/tree/f" "$t/tree/sub/g" | tr '\n' ' ')" "644 644 "
+    check "chmodtree keeps x" "$(stat -c %a "$t/tree/run.sh")" "744"
+    check "chmodtree folders" "$(stat -c %a "$t/tree/sub")" "755"
+    check "chmodtree not the folder itself" "$(stat -c %a "$t/tree")" "$tm"
+    check "chmodtree leaves link targets" "$(stat -c %a "$t/target")" "600"
+    check "chmodtree output" "$out" "4"$'\t'"0"
+    mkdir -p "$t/lock/a/b"; out=$("$me" chmodtree "$t/lock" "u-w" "u+r,u-wx")
+    chmod u+x "$t/lock/a"   # it lost x as asked; give it back to look inside
+    check "chmodtree owner without x reaches the deepest folder" "$(stat -c %a "$t/lock/a/b" 2>/dev/null)$(cut -f1 <<<"$out")" "4752"
+    chmod -R u+rwx "$t/lock"
     exit $fail ;;
 *) echo "usage: see the header of $0" >&2; exit 2 ;;
 esac
