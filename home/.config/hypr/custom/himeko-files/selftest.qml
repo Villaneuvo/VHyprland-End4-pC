@@ -85,16 +85,16 @@ ShellRoot {
         check("wheel: two notches up", Fs.wheelStep(0, 240), { flip: -2, acc: 0 });
         check("wheel: back and forth", Fs.wheelStep(-60, 60), { flip: 0, acc: 0 });
         // ---- properties rules ----
-        check("access: file rw", Fs.accessOf(0o644, "u", false), "Read and write");
-        check("access: file r", Fs.accessOf(0o644, "g", false), "Read-only");
+        check("access: file rw", Fs.accessOf(0o644, "u", false), "Read and Write");
+        check("access: file r", Fs.accessOf(0o644, "g", false), "Read-Only");
         check("access: file none", Fs.accessOf(0o600, "o", false), "None");
-        check("access: dir rwx", Fs.accessOf(0o755, "u", true), "Create and delete files");
-        check("access: dir r-x", Fs.accessOf(0o755, "g", true), "Access files");
-        check("access: dir r--", Fs.accessOf(0o744, "g", true), "List files only");
+        check("access: dir rwx", Fs.accessOf(0o755, "u", true), "Create and Delete Files");
+        check("access: dir r-x", Fs.accessOf(0o755, "g", true), "Access Files");
+        check("access: dir r--", Fs.accessOf(0o744, "g", true), "List Files Only");
         check("access: dir custom", Fs.accessOf(0o730, "g", true), "");
         check("withAccess: file others none", Fs.withAccess(0o644, "o", "None", false), 0o640);
-        check("withAccess: keeps setuid", Fs.withAccess(0o4755, "g", "List files only", true), 0o4745);
-        check("withAccess: file keeps x", Fs.withAccess(0o755, "u", "Read-only", false), 0o555);
+        check("withAccess: keeps setuid", Fs.withAccess(0o4755, "g", "List Files Only", true), 0o4745);
+        check("withAccess: file keeps x", Fs.withAccess(0o755, "u", "Read-Only", false), 0o555);
         check("exec: off", Fs.isExec(0o644), false);
         check("exec: on where readable", Fs.withExec(0o640, true), 0o750);
         check("exec: clear", Fs.withExec(0o755, false), 0o644);
@@ -103,6 +103,21 @@ ShellRoot {
         check("sizeText", Fs.sizeText(2412345), "2.3 MB (2,412,345 bytes)");
         check("sizeText small", Fs.sizeText(512), "512 bytes");
         check("fullDate", Fs.fullDate(new Date(2026, 9, 18, 16, 30)), "Sunday, 18 October 2026, 16:30");
+        // ---- properties redesign rules ----
+        check("levels: owner has no None", Fs.levelsFor("u", false), ["Read-Only", "Read and Write"]);
+        check("levels: others", Fs.levelsFor("o", true), ["None", "List Files Only", "Access Files", "Create and Delete Files"]);
+        check("umask 002", Fs.umaskLevels(0o002), { files: { u: "Read and Write", g: "Read and Write", o: "Read-Only" },
+              folders: { u: "Create and Delete Files", g: "Create and Delete Files", o: "Access Files" } });
+        check("umask 022", Fs.umaskLevels(0o022), { files: { u: "Read and Write", g: "Read-Only", o: "Read-Only" },
+              folders: { u: "Create and Delete Files", g: "Access Files", o: "Access Files" } });
+        check("symbolic: file read-only", Fs.symbolic("g", "Read-Only", false), "g+r,g-w");
+        check("symbolic: file rw", Fs.symbolic("g", "Read and Write", false), "g+rw");
+        check("symbolic: file none", Fs.symbolic("o", "None", false), "o-rw");
+        check("symbolic: dir none", Fs.symbolic("o", "None", true), "o-rwx");
+        check("symbolic: dir list", Fs.symbolic("o", "List Files Only", true), "o+r,o-wx");
+        check("symbolic: dir access", Fs.symbolic("u", "Access Files", true), "u+rx,u-w");
+        check("symbolic: dir all", Fs.symbolic("g", "Create and Delete Files", true), "g+rwx");
+        check("symbolicAll", Fs.symbolicAll({ u: "Read and Write", g: "Read-Only", o: "None" }, false), "u+rw,g+r,g-w,o-rw");
         // ---- motion tokens (Theme) ----
         check("curve: fastSpatial", Theme.curve.fastSpatial, [0.42, 1.67, 0.21, 0.90, 1, 1]);
         check("curve: enter", Theme.curve.enter, [0.05, 0.7, 0.1, 1, 1, 1]);

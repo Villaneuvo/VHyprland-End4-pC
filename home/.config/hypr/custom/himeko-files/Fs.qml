@@ -170,10 +170,10 @@ Singleton {
     // PDF wheel: one page per notch (120); a touchpad's small deltas add up instead of flipping a page each
     function wheelStep(acc, dy) { const a = acc + dy, n = Math.trunc(a / 120); return { flip: -n + 0, acc: a - n * 120 + 0 }; }
     // ---- properties: permission levels as Nautilus words them, size and date text ----
-    readonly property var fileLevels: ["None", "Read-only", "Read and write"]
-    readonly property var dirLevels: ["None", "List files only", "Access files", "Create and delete files"]
-    readonly property var dirBits: ({ "None": 0, "List files only": 4, "Access files": 5, "Create and delete files": 7 })
-    readonly property var fileBits: ({ "None": 0, "Read-only": 4, "Read and write": 6 })
+    readonly property var fileLevels: ["None", "Read-Only", "Read and Write"]
+    readonly property var dirLevels: ["None", "List Files Only", "Access Files", "Create and Delete Files"]
+    readonly property var dirBits: ({ "None": 0, "List Files Only": 4, "Access Files": 5, "Create and Delete Files": 7 })
+    readonly property var fileBits: ({ "None": 0, "Read-Only": 4, "Read and Write": 6 })
     readonly property var shiftOf: ({ u: 6, g: 3, o: 0 })
     function levels(isDir) { return isDir ? dirLevels : fileLevels; }
     // "" = a combination the levels don't name (shown as "Custom"); files ignore x (its own toggle)
@@ -187,6 +187,20 @@ Singleton {
         const sh = shiftOf[who], bits = isDir ? dirBits[level] : fileBits[level] | ((mode >> sh) & 1);
         return (mode & ~(7 << sh)) | (bits << sh);
     }
+    // Owner is never offered "None" (as in GNOME Files)
+    function levelsFor(who, isDir) { return levels(isDir).filter(l => who !== "u" || l !== "None"); }
+    // Enclosed-files start values: what new files and folders get (0666/0777 minus the umask), as GNOME Files does
+    function umaskLevels(umask) {
+        const f = 0o666 & ~umask, d = 0o777 & ~umask, of = (m, isDir) => ({ u: accessOf(m, "u", isDir), g: accessOf(m, "g", isDir), o: accessOf(m, "o", isDir) });
+        return { files: of(f, false), folders: of(d, true) };
+    }
+    // chmod's symbolic form for one class: adds what the level has, removes what it lacks; files never touch x
+    function symbolic(who, level, isDir) {
+        const bits = isDir ? dirBits[level] : fileBits[level], all = isDir ? [["r", 4], ["w", 2], ["x", 1]] : [["r", 4], ["w", 2]];
+        const add = all.filter(b => bits & b[1]).map(b => b[0]).join(""), del = all.filter(b => !(bits & b[1])).map(b => b[0]).join("");
+        return [add ? who + "+" + add : "", del ? who + "-" + del : ""].filter(x => x).join(",");
+    }
+    function symbolicAll(levels, isDir) { return ["u", "g", "o"].map(w => symbolic(w, levels[w], isDir)).join(","); }
     function isExec(mode) { return (mode & 0o111) !== 0; }
     function withExec(mode, on) { return on ? mode | ((mode & 0o444) >> 2) : mode & ~0o111; }   // x where readable
     function shared(values) { return values.every(v => v === values[0]) ? values[0] : "Mixed"; }
@@ -229,6 +243,18 @@ Singleton {
     function meta(path, kind, cb) {
         run([ops, "meta", path, kind], (text) => cb(lines(text).map(l => { const i = l.indexOf("\t"); return [l.slice(0, i), l.slice(i + 1)]; })));
     }
+    function chgrp(group, paths, cb) {
+        run([ops, "chgrp", group].concat(paths), (t, code, err) => {
+            if (code) failed(err.trim() || "Couldn't change the group");
+            if (cb) cb(code === 0);
+        });
+    }
+    // Symbolic modes for everything you own inside dir: cb(changed, skipped)
+    function chmodTree(dir, filesSym, dirsSym, cb) {
+        run([ops, "chmodtree", dir, filesSym, dirsSym], (text) => { const f = text.trim().split("\t"); cb(Number(f[0] || 0), Number(f[1] || 0)); });
+    }
+    function groups(cb) { run([ops, "groups"], (text) => cb(lines(text))); }
+    function umask(cb) { run([ops, "umask"], (text) => cb(parseInt(text.trim(), 8))); }
     function setDefaultApp(mime, id, cb) { run([ops, "mimedefault", mime, id], (t, code) => cb(code === 0)); }
     // Left/Right in Quick Look: stops at the ends; an item no longer listed starts from the first
     function stepIndex(i, d, n) { return i < 0 ? 0 : Math.max(0, Math.min(n - 1, i + d)); }
