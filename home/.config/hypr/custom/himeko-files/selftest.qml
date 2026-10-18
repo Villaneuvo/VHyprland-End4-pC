@@ -46,6 +46,20 @@ ShellRoot {
         check("countOf: unreadable", Fs.countLabel(Fs.countOf(c, "/a/root")), "Folder");
         check("countOf: not counted yet", Fs.countLabel(Fs.countOf(null, "/a/x")), "Folder");
 
+        // ---- thumbnails (Fs.canThumb) ----
+        Fs.thumbExts = { "pdf": true, "mp3": true, "ts": true };
+        Fs.thumbFailed = { "/x/bad.pdf": true };
+        check("canThumb: image", Fs.canThumb({ isDir: false, suffix: "PNG", path: "/x/a.PNG" }), true);
+        check("canThumb: pdf", Fs.canThumb({ isDir: false, suffix: "pdf", path: "/x/a.pdf" }), true);
+        check("canThumb: code never", Fs.canThumb({ isDir: false, suffix: "ts", path: "/x/a.ts" }), false);
+        check("canThumb: failed", Fs.canThumb({ isDir: false, suffix: "pdf", path: "/x/bad.pdf" }), false);
+        check("canThumb: no thumbnailer", Fs.canThumb({ isDir: false, suffix: "zip", path: "/x/a.zip" }), false);
+        check("canThumb: folder", Fs.canThumb({ isDir: true, suffix: "", path: "/x/d" }), false);
+        check("kinds: new video", Fs.kindOf({ isDir: false, suffix: "ogv" }), "video");
+        check("kinds: ttc font", Fs.kindOf({ isDir: false, suffix: "ttc" }), "font");
+        check("kinds: comic", Fs.kindOf({ isDir: false, suffix: "cbz" }), "doc");
+        Fs.thumbExts = {}; Fs.thumbFailed = {};
+
         // ---- motion tokens (Theme) ----
         check("curve: fastSpatial", Theme.curve.fastSpatial, [0.42, 1.67, 0.21, 0.90, 1, 1]);
         check("curve: enter", Theme.curve.enter, [0.05, 0.7, 0.1, 1, 1, 1]);

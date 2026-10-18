@@ -72,6 +72,8 @@ Singleton {
     readonly property var duration: ({ fastSpatial: 350, spatial: 500, effects: 200, enter: 400 })
     // Off when GNOME's "enable-animations" or Hyprland's animations are off; HF_ANIMATE=0 forces it (tests)
     property bool animate: Quickshell.env("HF_ANIMATE") !== "0"
+    // HF_MUTE=1 silences Quick Look media (tests: never play sound through the user's speakers)
+    readonly property bool mute: Quickshell.env("HF_MUTE") === "1"
     function dur(kind) { return animate ? duration[kind] : 0; }
     Process {
         running: Quickshell.env("HF_ANIMATE") !== "0"

@@ -120,16 +120,16 @@ Singleton {
     }
     readonly property var kinds: ({
         image: { icon: "image", label: "Image", ext: ["jpg", "jpeg", "png", "gif", "webp", "avif", "bmp", "svg", "heic", "jxl", "tif", "tiff", "ico"] },
-        video: { icon: "movie", label: "Video", ext: ["mp4", "mkv", "webm", "mov", "avi", "m4v"] },
+        video: { icon: "movie", label: "Video", ext: ["mp4", "mkv", "webm", "mov", "avi", "m4v", "flv", "wmv", "mpg", "mpeg", "3gp", "ogv"] },
         audio: { icon: "music_note", label: "Audio", ext: ["mp3", "flac", "ogg", "opus", "wav", "m4a", "aac"] },
         pdf: { icon: "picture_as_pdf", label: "PDF", ext: ["pdf"] },
-        doc: { icon: "description", label: "Document", ext: ["txt", "md", "doc", "docx", "odt", "rtf", "epub"] },
+        doc: { icon: "description", label: "Document", ext: ["txt", "md", "doc", "docx", "odt", "rtf", "epub", "cbz", "cbr", "cb7", "cbt", "djvu"] },
         sheet: { icon: "table_chart", label: "Spreadsheet", ext: ["csv", "xls", "xlsx", "ods"] },
         slides: { icon: "slideshow", label: "Presentation", ext: ["ppt", "pptx", "odp"] },
         archive: { icon: "folder_zip", label: "Archive", ext: ["zip", "gz", "xz", "bz2", "zst", "tar", "7z", "rar", "tgz"] },
         code: { icon: "code", label: "Code", ext: ["js", "ts", "tsx", "jsx", "py", "sh", "lua", "qml", "json", "yml", "yaml", "toml", "html", "css", "c", "cpp", "h", "rs", "go", "java", "php", "sql", "conf", "ini", "xml"] },
         app: { icon: "deployed_code", label: "Application", ext: ["appimage", "deb", "exe", "desktop", "run"] },
-        font: { icon: "font_download", label: "Font", ext: ["ttf", "otf", "woff", "woff2"] },
+        font: { icon: "font_download", label: "Font", ext: ["ttf", "otf", "woff", "woff2", "ttc"] },
         disk: { icon: "album", label: "Disk image", ext: ["iso", "img"] }
     })
     readonly property var extKind: {
@@ -147,19 +147,27 @@ Singleton {
         const uri = "file://" + path.split("/").map(s => encodeURIComponent(s)).join("/");
         return home + "/.cache/thumbnails/large/" + Qt.md5(uri) + ".png";
     }
-    property var thumbQueue: []
+    property var thumbExts: ({})           // extensions with a system thumbnailer (ops.sh thumbexts, read at startup)
+    property var thumbFailed: ({})         // path -> true: failed this session, don't ask again (reassigned on change)
+    function canThumb(item) {
+        if (item.isDir || thumbFailed[item.path]) return false;
+        const k = kindOf(item);
+        return k === "image" || k === "video" || (k !== "code" && thumbExts[(item.suffix || "").toLowerCase()] === true);
+    }
+    property var thumbQueue: []            // [{ path, kind }]
     property int thumbBusy: 0
     signal thumbReady(string path)
-    function requestThumb(path) {
-        if (thumbQueue.indexOf(path) < 0) { thumbQueue.push(path); pumpThumbs(); }
+    function requestThumb(path, kind) {
+        if (!thumbQueue.some(q => q.path === path)) { thumbQueue.push({ path: path, kind: kind }); pumpThumbs(); }
     }
     function pumpThumbs() {
         while (thumbBusy < 3 && thumbQueue.length > 0) {
-            const src = thumbQueue.shift();
+            const q = thumbQueue.shift();
             thumbBusy++;
-            run([ops, "thumb", src, thumbPath(src), "256", kindOf({ isDir: false, suffix: src.slice(src.lastIndexOf(".") + 1) })], (t, code) => {
+            run([ops, "thumb", q.path, thumbPath(q.path), "256", q.kind], (t, code) => {
                 thumbBusy--;
-                if (code === 0) root.thumbReady(src);
+                if (code === 0) root.thumbReady(q.path);
+                else root.thumbFailed = Object.assign({ [q.path]: true }, root.thumbFailed);
                 pumpThumbs();
             });
         }
@@ -319,5 +327,7 @@ Singleton {
     }
 
     // DesktopEntries scans on first use and answers null until then: start it now
-    Component.onCompleted: { refreshPlaces(); void DesktopEntries.applications.values.length; }
+    Component.onCompleted: {
+        run([ops, "thumbexts"], (text) => { const m = {}; for (const e of lines(text)) m[e] = true; root.thumbExts = m; });
+        refreshPlaces(); void DesktopEntries.applications.values.length; }
 }

@@ -62,6 +62,7 @@ Rectangle {
             Text {
                 Layout.fillWidth: true
                 text: root.item ? root.item.name : (root.tab.selectedCount > 1 ? root.tab.selectedCount + " items selected" : root.tab.name)
+                textFormat: Text.PlainText   // names can look like markup ("<b>")
                 wrapMode: Text.WrapAnywhere
                 maximumLineCount: 3
                 elide: Text.ElideRight
@@ -144,6 +145,7 @@ Rectangle {
         Layout.preferredWidth: 80
     }
     component MetaValue: Text {
+        textFormat: Text.PlainText   // names can look like markup ("<b>")
         Layout.fillWidth: true
         elide: Text.ElideMiddle
         color: Theme.text; font.family: Theme.font; font.pixelSize: 13

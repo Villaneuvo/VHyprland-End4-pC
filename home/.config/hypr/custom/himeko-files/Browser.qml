@@ -422,7 +422,7 @@ FocusScope {
                             id: measure
                             visible: false
                             spacing: 22
-                            Repeater { model: crumbs.parts; delegate: Text { required property var modelData; text: modelData.label || "XX"; font.family: Theme.font; font.pixelSize: 14; font.weight: 600 } }
+                            Repeater { model: crumbs.parts; delegate: Text { required property var modelData; text: modelData.label || "XX"; textFormat: Text.PlainText; font.family: Theme.font; font.pixelSize: 14; font.weight: 600 } }
                         }
                         function toEnd() { contentX = Math.max(0, contentWidth - width); }
                         onContentWidthChanged: toEnd()
@@ -471,6 +471,7 @@ FocusScope {
                                                 width: Math.min(implicitWidth, Math.max(40, crumbs.width - 70))
                                                 elide: Text.ElideMiddle
                                                 text: modelData.label
+                                                textFormat: Text.PlainText   // names can look like markup ("<b>")
                                                 color: parent.parent.last ? Theme.text : Theme.textDim
                                                 font.family: Theme.font; font.pixelSize: 14; font.weight: parent.parent.last ? 600 : 450
                                                 anchors.verticalCenter: parent.verticalCenter
@@ -500,6 +501,7 @@ FocusScope {
                             Text {
                                 visible: field.text === "" && root.searching
                                 text: "Search in " + (root.tab ? root.tab.name : "")
+                                textFormat: Text.PlainText   // names can look like markup ("<b>")
                                 color: Theme.outline; font: field.font
                             }
                             onTextEdited: if (root.searching) root.tab.query = text
@@ -612,6 +614,7 @@ FocusScope {
                             Rectangle { visible: on; width: 8; height: 8; radius: 4; color: Theme.primary; anchors.verticalCenter: parent.verticalCenter }
                             Text {
                                 text: modelData.name
+                                textFormat: Text.PlainText   // names can look like markup ("<b>")
                                 width: Math.min(implicitWidth, tabStrip.nameMax)
                                 elide: Text.ElideRight
                                 color: on ? Theme.text : Theme.textDim
@@ -761,6 +764,7 @@ FocusScope {
                             Layout.minimumWidth: 0
                             elide: Text.ElideRight
                             text: root.tab ? (root.tab.inTrash ? "Trash" : root.tab.name) : ""
+                            textFormat: Text.PlainText   // names can look like markup ("<b>")
                             color: Theme.text; font.family: Theme.font; font.pixelSize: 34; font.weight: 700; font.letterSpacing: -0.4
                         }
                         Icon { name: "star"; filled: true; size: 20; color: Theme.tertiary; rotation: 12; Layout.alignment: Qt.AlignTop }

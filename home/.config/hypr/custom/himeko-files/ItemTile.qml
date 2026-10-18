@@ -132,6 +132,7 @@ MouseArea {
 
     component NameText: Text {
         text: root.item.name
+        textFormat: Text.PlainText   // names can look like markup ("<b>")
         elide: Text.ElideMiddle
         color: Theme.text
         font.family: Theme.font; font.pixelSize: 13; font.weight: 600

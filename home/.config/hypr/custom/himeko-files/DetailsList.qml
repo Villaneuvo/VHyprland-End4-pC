@@ -151,6 +151,7 @@ ListView {
                     visible: root.renamingPath !== row.modelData.path
                     Layout.fillWidth: true
                     text: row.modelData.name
+                    textFormat: Text.PlainText   // names can look like markup ("<b>")
                     elide: Text.ElideMiddle
                     color: row.selected ? Theme.inkPrimaryContainer : Theme.text
                     font.family: Theme.font; font.pixelSize: 14; font.weight: row.selected ? 650 : 500
