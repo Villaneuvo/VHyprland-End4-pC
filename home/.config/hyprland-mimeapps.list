@@ -1,5 +1,5 @@
 # Read only when XDG_CURRENT_DESKTOP=Hyprland (GNOME uses /usr/share/applications/gnome-mimeapps.list).
-# Mirrors GNOME's picks: Image Viewer (Loupe) for images, VLC for video.
+# Mirrors GNOME's picks: Image Viewer (Loupe) for images, VLC for video; folders open in Himeko Files.
 [Default Applications]
 image/png=org.gnome.Loupe.desktop
 image/jpeg=org.gnome.Loupe.desktop
@@ -17,3 +17,4 @@ video/quicktime=vlc.desktop
 video/x-msvideo=vlc.desktop
 video/mpeg=vlc.desktop
 video/ogg=vlc.desktop
+inode/directory=himeko-files.desktop
