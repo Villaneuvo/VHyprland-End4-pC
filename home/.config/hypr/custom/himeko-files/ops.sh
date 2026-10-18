@@ -7,7 +7,10 @@
 #   ops.sh mkdir DIR NAME                -> created path
 #   ops.sh zip DIR NAME.zip ITEM...      -> created archive
 #   ops.sh extract ARCHIVE               -> created folder
-#   ops.sh thumb SRC DST SIZE            -> exit 0 when DST was written
+#   ops.sh thumbexts                     -> extensions that have a thumbnailer, one per line
+#   ops.sh thumb SRC DST SIZE KIND       -> exit 0 when DST was written (KIND: the app's kind, image/video/…)
+# Thumbnailers, ImageMagick and ffmpeg parse untrusted files, so they run in bwrap (see sandbox).
+# Env: HF_THUMBNAILERS (colon-separated thumbnailer dirs), HF_MIME (tests: skip MIME detection)
 set -u
 
 unique() { # unique DIR NAME -> a path in DIR that doesn't exist yet
@@ -18,6 +21,29 @@ unique() { # unique DIR NAME -> a path in DIR that doesn't exist yet
     fi
     while [ -e "$dir/$base ($n)$ext" ] || [ -L "$dir/$base ($n)$ext" ]; do n=$((n + 1)); done
     printf '%s\n' "$dir/$base ($n)$ext"
+}
+
+# sandbox SRC CMD...: runs CMD with SRC read-only at $(inpath SRC) and a fresh temp dir ($sbdir) at /tmp; no home,
+# no network. Output named /tmp/gnome-desktop-* : Ubuntu's AppArmor lets papers-thumbnailer write nothing else.
+inpath() { local e=${1##*/}; [[ $e == *.* ]] && e=${e##*.} || e=; e=${e,,}; [[ $e =~ ^[a-z0-9]+$ ]] || e=bin; printf '/input.%s' "$e"; }
+sandbox() {
+    local src=$1; shift
+    sbdir=$(mktemp -d -p "${XDG_RUNTIME_DIR:-/tmp}")
+    timeout 20 bwrap --ro-bind /usr /usr --symlink usr/lib /lib --symlink usr/lib64 /lib64 --symlink usr/bin /bin \
+        --symlink usr/sbin /sbin --ro-bind /etc /etc --proc /proc --dev /dev --bind "$sbdir" /tmp \
+        --ro-bind "$src" "$(inpath "$src")" --unshare-all --die-with-parent --new-session "$@"
+}
+thumbnailers() { # usable .thumbnailer files, user dir first; glycin-* start their own bwrap, which can't nest in ours
+    local d f b try seen=" " IFS=:
+    for d in ${HF_THUMBNAILERS:-$HOME/.local/share/thumbnailers:/usr/share/thumbnailers}; do
+        for f in "$d"/*.thumbnailer; do
+            [ -f "$f" ] || continue; b=${f##*/}
+            [[ $b == glycin-* || $seen == *" $b "* ]] && continue; seen+="$b "
+            try=$(sed -n 's/^TryExec=//p' "$f")
+            [ -z "$try" ] || command -v "$try" >/dev/null || continue
+            printf '%s\n' "$f"
+        done
+    done
 }
 
 cmd=${1:-}; shift || true
@@ -54,14 +80,38 @@ extract)
         *.zip) unzip -q -- "$archive" -d "$target" ;;
         *) tar -xf "$archive" -C "$target" ;;
     esac && printf '%s\n' "$target" || { rmdir -- "$target" 2>/dev/null; exit 1; } ;;
+thumbexts)
+    thumbnailers | while read -r f; do sed -n 's/^MimeType=//p' "$f" | tr ';' '\n'; done | grep . | sort -u |
+        awk -F: 'NR == FNR { m[$0] = 1; next } ($2 in m) && $3 ~ /^\*\.[A-Za-z0-9+_-]+$/ { print tolower(substr($3, 3)) }' \
+            - /usr/share/mime/globs2 | sort -u ;;
 thumb)
-    src=$1 dst=$2 size=$3; mkdir -p -- "$(dirname -- "$dst")"; tmp="$dst.$$.png"
-    case "${src,,}" in
-        *.mp4|*.mkv|*.webm|*.mov|*.avi|*.m4v)
-            command -v ffmpegthumbnailer >/dev/null && ffmpegthumbnailer -i "$src" -o "$tmp" -s "$size" -c png >/dev/null 2>&1 ||
-                ffmpeg -loglevel error -y -ss 3 -i "$src" -frames:v 1 -vf "scale=$size:-1" "$tmp" ;;
-        *) magick "$src[0]" -auto-orient -thumbnail "${size}x${size}" "$tmp" 2>/dev/null ;;
-    esac && [ -s "$tmp" ] && mv -- "$tmp" "$dst" || { rm -f -- "$tmp"; exit 1; } ;;
+    src=$1 dst=$2 size=$3 kind=${4:-}
+    fail="$(dirname -- "$dst")/../fail/himeko-files/$(basename -- "$dst")"
+    [ "$fail" -nt "$src" ] && exit 1     # failed before and not edited since
+    in=$(inpath "$src") out=/tmp/gnome-desktop-out.png cmd=()
+    case "$kind" in
+    image) cmd=(magick "$in[0]" -auto-orient -thumbnail "${size}x$size" "$out") ;;
+    video) if command -v ffmpegthumbnailer >/dev/null; then cmd=(ffmpegthumbnailer -i "$in" -o "$out" -s "$size" -c png)
+           else cmd=(ffmpeg -loglevel error -y -ss 3 -i "$in" -frames:v 1 -vf "scale=$size:-1" "$out"); fi ;;
+    *)  mime=${HF_MIME:-$(gio info -a standard::content-type -- "$src" 2>/dev/null | sed -n 's/^ *standard::content-type: //p')}
+        while read -r f; do
+            [[ ";$(sed -n 's/^MimeType=//p' "$f");" == *";$mime;"* ]] || continue
+            mapfile -t words < <(sed -n 's/^Exec=//p' "$f" | xargs printf '%s\n')   # xargs: shell-style quotes, no eval
+            for w in "${words[@]}"; do
+                w=${w//%%/$'\1'}; w=${w//%i/$in}; w=${w//%u/file://$in}; w=${w//%o/$out}; w=${w//%s/$size}
+                cmd+=("${w//$'\1'/%}")
+            done
+            break
+        done < <(thumbnailers) ;;
+    esac
+    [ ${#cmd[@]} -gt 0 ] && sandbox "$src" "${cmd[@]}" >/dev/null 2>&1
+    if [ -s "${sbdir:-/nonexistent}/gnome-desktop-out.png" ]; then
+        mkdir -p -- "$(dirname -- "$dst")" && mv -- "$sbdir/gnome-desktop-out.png" "$dst"; ok=$?
+    else
+        mkdir -p -- "$(dirname -- "$fail")" && : >"$fail"; ok=1
+    fi
+    [ -n "${sbdir:-}" ] && rm -rf -- "$sbdir"
+    exit $ok ;;
 selftest)
     t=$(mktemp -d -p "${XDG_CACHE_HOME:-$HOME/.cache}"); trap 'rm -rf -- "$t"' EXIT; me=$0; fail=0
     check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got '$2', want '$3'"; fail=1; fi; }
@@ -83,6 +133,35 @@ selftest)
     check "trash removes" "$([ -e "$t/a/f.txt" ] && echo still || echo gone)" "gone"
     "$me" restore $uri
     check "restore brings it back" "$(cat "$t/a/f.txt" 2>/dev/null)" "x"
+    # ---- thumbnails ----
+    exts=$("$me" thumbexts)
+    for e in pdf mp3 ttf cbz djvu; do check "thumbexts has $e" "$(grep -cx "$e" <<<"$exts")" "1"; done
+    check "thumbexts skips glycin (only glycin claims png)" "$(grep -cx png <<<"$exts")" "0"
+    magick -size 300x400 xc:white -pointsize 30 -annotate +40+80 'Page one' "$t/it's <b>odd & \"weird\" doc.pdf"
+    magick -size 200x200 xc:pink "$t/cover.png"
+    ffmpeg -loglevel error -y -f lavfi -i sine=duration=1 -i "$t/cover.png" -map 0 -map 1 \
+        -c:a libmp3lame -id3v2_version 3 -disposition:v attached_pic "$t/song.mp3"
+    font=$(fc-list : file | cut -d: -f1 | grep -m1 '\.ttf$')
+    for f in "$t/it's <b>odd & \"weird\" doc.pdf:pdf" "$t/song.mp3:audio" "$font:font"; do
+        src=${f%:*}; "$me" thumb "$src" "$t/large/$(basename "$src").png" 256 "${f##*:}"
+        check "thumb ${f##*:}" "$(file -b --mime-type "$t/large/$(basename "$src").png" 2>/dev/null)" "image/png"
+    done
+    # sandbox: a thumbnailer can't write outside its temp dir
+    mkdir -p "$t/th"   # the fake thumbnailer runs inline (sh -c): a script in $HOME couldn't even start in the sandbox
+    printf '[Thumbnailer Entry]\nExec=sh -c '"'"'touch "%s/escaped"; magick -size 8x8 xc:red "$1"'"'"' sh %%o\nMimeType=application/x-hf-test;\n' "$t" >"$t/th/evil.thumbnailer"
+    printf 'hf' >"$t/x.hftest"   # mapped to the fake type below
+    HF_THUMBNAILERS=$t/th HF_MIME=application/x-hf-test "$me" thumb "$t/x.hftest" "$t/large/x.png" 256 file
+    check "sandboxed thumbnailer ran" "$?" "0"
+    check "sandbox blocks writes outside" "$([ -e "$t/escaped" ] && echo escaped || echo blocked)" "blocked"
+    # failures leave a marker; the next try returns at once; editing the file retries
+    printf '[Thumbnailer Entry]\nExec=sh -c "sleep 1; exit 1"\nMimeType=application/x-hf-test;\n' >"$t/th/evil.thumbnailer"
+    HF_THUMBNAILERS=$t/th HF_MIME=application/x-hf-test "$me" thumb "$t/x.hftest" "$t/large/y.png" 256 file
+    check "fail marker" "$([ -e "$t/fail/himeko-files/y.png" ] && echo yes)" "yes"
+    s=$(date +%s%N); HF_THUMBNAILERS=$t/th HF_MIME=application/x-hf-test "$me" thumb "$t/x.hftest" "$t/large/y.png" 256 file
+    check "marker skips the retry" "$(( ($(date +%s%N) - s) / 1000000 < 500 ))" "1"
+    touch -d '+2 seconds' "$t/x.hftest"; s=$(date +%s%N)
+    HF_THUMBNAILERS=$t/th HF_MIME=application/x-hf-test "$me" thumb "$t/x.hftest" "$t/large/y.png" 256 file
+    check "edited file retries" "$(( ($(date +%s%N) - s) / 1000000 >= 900 ))" "1"
     exit $fail ;;
 *) echo "usage: see the header of $0" >&2; exit 2 ;;
 esac

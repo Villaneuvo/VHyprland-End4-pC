@@ -157,7 +157,7 @@ Singleton {
         while (thumbBusy < 3 && thumbQueue.length > 0) {
             const src = thumbQueue.shift();
             thumbBusy++;
-            run([ops, "thumb", src, thumbPath(src), "256"], (t, code) => {
+            run([ops, "thumb", src, thumbPath(src), "256", kindOf({ isDir: false, suffix: src.slice(src.lastIndexOf(".") + 1) })], (t, code) => {
                 thumbBusy--;
                 if (code === 0) root.thumbReady(src);
                 pumpThumbs();
