@@ -9,6 +9,10 @@
 #   ops.sh extract ARCHIVE               -> created folder
 #   ops.sh pages PDF                     -> page count (exit 1 if unreadable)
 #   ops.sh page PDF N WIDTH OUT          -> page N as a WIDTH px wide PNG at OUT
+#   ops.sh props PATH...                 -> per path: mode owner group mine size atime mtime birth type linktarget
+#                                           mime description avail total (TAB-separated; avail/total for folders)
+#   ops.sh dirsize PATH...               -> "items<TAB>bytes" every 5000 entries, then "done<TAB>items<TAB>bytes"
+#   ops.sh chmod MODE PATH...            -> chmod, symlinks skipped
 #   ops.sh fontstyle FONT                -> its style name ("Bold", "Italic", …)
 #   ops.sh text FILE                     -> its first 256 KB; exit 3 (no output) when they hold a NUL byte (binary)
 #   ops.sh thumbexts                     -> extensions that have a thumbnailer, one per line
@@ -91,6 +95,29 @@ text)
     tmp=$(mktemp); head -c 262144 -- "$1" >"$tmp" || { rm -f -- "$tmp"; exit 1; }
     if [ "$(tr -d '\0' <"$tmp" | wc -c)" != "$(wc -c <"$tmp")" ]; then rm -f -- "$tmp"; exit 3; fi
     cat -- "$tmp"; rm -f -- "$tmp" ;;
+props)
+    myuid=$(id -u)
+    for p in "$@"; do
+        st=$(stat -c $'%a\t%U\t%G\t%u\t%s\t%X\t%Y\t%W' -- "$p") || continue
+        if [ -L "$p" ]; then type=link; tgt=$(readlink -- "$p"); [ -e "$p" ] || tgt='!broken'
+        elif [ -d "$p" ]; then type=dir; tgt=; else type=file; tgt=; fi
+        info=$(gio info -a standard::content-type,standard::description -- "$p" 2>/dev/null)
+        mime=$(sed -n 's/^ *standard::content-type: //p' <<<"$info"); desc=$(sed -n 's/^ *standard::description: //p' <<<"$info")
+        avail= total=
+        [ "$type" = dir ] && read -r avail total < <(df -B1 --output=avail,size -- "$p" | tail -1)
+        uid=$(cut -f4 <<<"$st"); mine=0; [ "$uid" = "$myuid" ] && mine=1
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(cut -f1-3 <<<"$st")" "$mine" "$(cut -f5-8 <<<"$st")" \
+            "$type" "$tgt" "$mime" "$desc" "$avail" "$total"
+    done ;;
+dirsize)
+    for p in "$@"; do
+        if [ -d "$p" ] && [ ! -L "$p" ]; then find "$p" -mindepth 1 \( -type f -printf '%s\n' -o -printf '0\n' \) 2>/dev/null
+        else stat -c %s -- "$p" 2>/dev/null; fi
+    done | awk '{ n++; b += $1; if (n % 5000 == 0) { print n "\t" b; fflush() } } END { print "done\t" n + 0 "\t" b + 0 }' ;;
+chmod)
+    mode=$1; shift; ok=0
+    for p in "$@"; do [ -L "$p" ] && continue; chmod -- "$mode" "$p" || ok=1; done
+    exit $ok ;;
 fontstyle)
     { sandbox "$1" fc-scan --format '%{style[0]}\n' "$(inpath "$1")" 2>/dev/null; unsandbox; } | head -1 ;;
 pages)
@@ -207,6 +234,21 @@ selftest)
     printf '[Thumbnailer Entry]\nExec=sh -c "mkdir /tmp/locked; touch /tmp/locked/f; chmod 000 /tmp/locked"\nMimeType=application/x-hf-test;\n' >"$t/th/evil.thumbnailer"
     XDG_RUNTIME_DIR=$t/run HF_THUMBNAILERS=$t/th HF_MIME=application/x-hf-test "$me" thumb "$t/x.hftest" "$t/large/w.png" 256 file
     check "sandbox dir removed" "$(ls -A "$t/run" | wc -l)" "0"
+    # ---- properties: props, dirsize, chmod ----
+    mkdir -p "$t/p/d/.h"; printf 'abc' >"$t/p/f.txt"; printf '12345' >"$t/p/d/a"; printf '1' >"$t/p/d/.h/b"
+    ln -s f.txt "$t/p/l"; ln -s nowhere "$t/p/dead"; chmod 640 "$t/p/f.txt"
+    pl=$("$me" props "$t/p/f.txt")   # cut, not read: IFS=tab would merge the empty link-target field
+    check "props mode" "$(cut -f1 <<<"$pl")" "640"; check "props mine" "$(cut -f4 <<<"$pl")" "1"
+    check "props size" "$(cut -f5 <<<"$pl")" "3"; check "props type" "$(cut -f9 <<<"$pl")" "file"
+    check "props mime" "$(cut -f11 <<<"$pl")" "text/plain"
+    check "props link" "$("$me" props "$t/p/l" | cut -f9,10)" "link"$'\t'"f.txt"
+    check "props broken link" "$("$me" props "$t/p/dead" | cut -f10)" "!broken"
+    check "props dir free space" "$("$me" props "$t/p/d" | awk -F'\t' '{ print ($13 > 0 && $14 >= $13) }')" "1"
+    check "props one line per path" "$("$me" props "$t/p/f.txt" "$t/p/d" | wc -l)" "2"
+    check "dirsize folder" "$("$me" dirsize "$t/p/d" | tail -1)" "done"$'\t'"3"$'\t'"6"
+    check "dirsize mixed" "$("$me" dirsize "$t/p/d" "$t/p/f.txt" | tail -1)" "done"$'\t'"4"$'\t'"9"
+    "$me" chmod 4750 "$t/p/f.txt"; check "chmod" "$(stat -c %a "$t/p/f.txt")" "4750"
+    "$me" chmod 600 "$t/p/l"; check "chmod skips symlinks" "$(stat -c %a "$t/p/f.txt")" "4750"
     exit $fail ;;
 *) echo "usage: see the header of $0" >&2; exit 2 ;;
 esac
