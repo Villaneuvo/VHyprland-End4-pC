@@ -7,6 +7,8 @@
 #   ops.sh mkdir DIR NAME                -> created path
 #   ops.sh zip DIR NAME.zip ITEM...      -> created archive
 #   ops.sh extract ARCHIVE               -> created folder
+#   ops.sh pages PDF                     -> page count (exit 1 if unreadable)
+#   ops.sh page PDF N WIDTH OUT          -> page N as a WIDTH px wide PNG at OUT
 #   ops.sh thumbexts                     -> extensions that have a thumbnailer, one per line
 #   ops.sh thumb SRC DST SIZE KIND       -> exit 0 when DST was written (KIND: the app's kind, image/video/…)
 # Thumbnailers, ImageMagick and ffmpeg parse untrusted files, so they run in bwrap (see sandbox).
@@ -80,6 +82,17 @@ extract)
         *.zip) unzip -q -- "$archive" -d "$target" ;;
         *) tar -xf "$archive" -C "$target" ;;
     esac && printf '%s\n' "$target" || { rmdir -- "$target" 2>/dev/null; exit 1; } ;;
+pages)
+    # one subshell for the sandbox and its cleanup: $sbdir is set inside it
+    n=$({ sandbox "$1" pdfinfo "$(inpath "$1")" 2>/dev/null; rm -rf -- "$sbdir"; } | awk '/^Pages:/ { print $2 }')
+    [ -n "$n" ] && printf '%s\n' "$n" || exit 1 ;;
+page)
+    src=$1 n=$2 width=$3 out=$4
+    [ -s "$out" ] && exit 0      # rendered before (the name carries the file's mtime)
+    sandbox "$src" pdftoppm -f "$n" -l "$n" -scale-to-x "$width" -scale-to-y -1 -png -singlefile "$(inpath "$src")" \
+        /tmp/gnome-desktop-out >/dev/null 2>&1
+    if [ -s "$sbdir/gnome-desktop-out.png" ]; then mkdir -p -- "$(dirname -- "$out")" && mv -- "$sbdir/gnome-desktop-out.png" "$out"; ok=$?; else ok=1; fi
+    rm -rf -- "$sbdir"; exit $ok ;;
 thumbexts)
     thumbnailers | while read -r f; do sed -n 's/^MimeType=//p' "$f" | tr ';' '\n'; done | grep . | sort -u |
         awk -F: 'NR == FNR { m[$0] = 1; next } ($2 in m) && $3 ~ /^\*\.[A-Za-z0-9+_-]+$/ { print tolower(substr($3, 3)) }' \
@@ -162,6 +175,13 @@ selftest)
     touch -d '+2 seconds' "$t/x.hftest"; s=$(date +%s%N)
     HF_THUMBNAILERS=$t/th HF_MIME=application/x-hf-test "$me" thumb "$t/x.hftest" "$t/large/y.png" 256 file
     check "edited file retries" "$(( ($(date +%s%N) - s) / 1000000 >= 900 ))" "1"
+    # ---- PDF pages ----
+    magick -size 300x400 xc:white -annotate +40+80 'One' xc:white -annotate +40+80 'Two' "$t/two.pdf"
+    check "pages" "$("$me" pages "$t/two.pdf")" "2"
+    "$me" page "$t/two.pdf" 2 600 "$t/p2.png"
+    check "page width" "$(magick identify -format %w "$t/p2.png" 2>/dev/null)" "600"
+    head -c 4000 /dev/urandom >"$t/broken.pdf"
+    check "broken pdf" "$("$me" pages "$t/broken.pdf" >/dev/null 2>&1; echo $?)" "1"
     exit $fail ;;
 *) echo "usage: see the header of $0" >&2; exit 2 ;;
 esac

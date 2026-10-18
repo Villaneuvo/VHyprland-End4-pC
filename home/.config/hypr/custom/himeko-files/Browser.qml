@@ -883,6 +883,7 @@ FocusScope {
             root.openLook();
         }
         function lookStep(d: int): void { if (root.lookItem) root.lookStep(d); }
+        function lookPage(n: int): void { const b = lookLoader.item?.body; if (b && b.flip) b.flip(n - b.page); }
         function lookState(): string {
             const q = lookLoader.item, b = q ? q.body : null;
             return JSON.stringify({ open: root.lookItem !== null, type: q ? q.shownType : "", name: root.lookItem ? root.lookItem.name : "",
