@@ -919,6 +919,8 @@ FocusScope {
         function propsOpen(key: string): void { propsLoader.item?.openKey(key, null); }
         function propsPick(choice: string): void { propsLoader.item?.pick(choice); }
         function propsGroup(name: string): void { propsLoader.item?.setGroup(name); }
+        function propsEnclosed(json: string): void { propsLoader.item?.mergeEnclosed(JSON.parse(json)); }
+        function propsEnclosedApply(): void { propsLoader.item?.applyEnclosed(); }
         function propsRename(name: string): void { propsLoader.item?.rename(name); }
         function propsDefault(id: string): void { propsLoader.item?.setDefault(id); }
         // who: u|g|o|exec, prefixed files:/folders: when both kinds are selected; level: the chip text or on/off
@@ -932,6 +934,7 @@ FocusScope {
                                     popover: p ? p.popoverKey : "",
                                     name: p ? p.title : "", size: p ? p.sizeLine : "", counting: p ? p.counting : false,
                                     canRename: p ? p.canRename : false,
+                                    enclosed: p ? p.enclosed : {}, enclosedBusy: p ? p.enclosedBusy : false,
                                     perms: p && p.permsState ? p.permsState : {}, apps: p && p.appCount ? p.appCount : 0,
                                     meta: p && p.metaCount ? p.metaCount : 0 });
         }

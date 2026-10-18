@@ -37,6 +37,7 @@ FocusScope {
         pageDir = name === "" || (page === "Enclosed" && name === "Permissions") ? -1 : 1;
         page = name;
         if (name === "Permissions" && !groups.length) Fs.groups((list) => root.groups = list);
+        if (name === "Enclosed") Fs.umask((u) => root.enclosed = Fs.umaskLevels(u));
         slide.restart();
     }
     // Esc: the popover, else the rename field, else back a page, else close the card
@@ -100,6 +101,24 @@ FocusScope {
         if (!canGroup || !name || name === groupState) return;
         const its = items;
         Fs.chgrp(name, its.map(it => it.path), () => Fs.props(its.map(it => it.path), (list) => { if (root.items === its) root.info = list; }));
+    }
+    // ---- enclosed files: levels for everything inside the folder, starting from the umask (as GNOME Files) ----
+    property var enclosed: ({})            // { files: {u,g,o}, folders: {u,g,o} }
+    property bool enclosedBusy: false
+    function mergeEnclosed(change) {
+        const e = { files: Object.assign({}, enclosed.files), folders: Object.assign({}, enclosed.folders) };
+        for (const cls in change) Object.assign(e[cls], change[cls]);
+        enclosed = e;
+    }
+    // Runs to the end even if the card closes (the user confirmed it with Change); the toast comes from Fs
+    function applyEnclosed() {
+        if (enclosedBusy || !enclosed.files || !one || !first.isDir || !permsEditable) return;
+        enclosedBusy = true;
+        Fs.chmodTree(first.path, Fs.symbolicAll(enclosed.files, false), Fs.symbolicAll(enclosed.folders, true), (changed, skipped) => {
+            const n = (x) => String(x).replace(/\B(?=(\d{3})+(?!\d))/g, ",");   // root may be gone: no helpers from it
+            Fs.toast("Changed permissions of " + n(changed) + (changed === 1 ? " item" : " items") + (skipped ? ", " + n(skipped) + " skipped" : ""), false);
+            try { root.enclosedBusy = false; if (root.page === "Enclosed") root.goPage("Permissions"); } catch (e) {}
+        });
     }
     readonly property var permsState: !info.length ? {}
         : Object.assign(mixedKinds ? { files: permsOf(false), folders: permsOf(true) } : permsOf(first.isDir),
@@ -201,6 +220,9 @@ FocusScope {
             return { choices: Fs.levelsFor(who, isDir), current: st ? st[who] : "", searchable: false,
                      pick: (l) => setPerm(cls, who, l) };
         }
+        if (k[0] === "enclosed" && enclosed.files)
+            return { choices: Fs.levelsFor(k[2], k[1] === "folders"), current: enclosed[k[1]][k[2]], searchable: false,
+                     pick: (l) => mergeEnclosed({ [k[1]]: { [k[2]]: l } }) };
         if (key === "group" && canGroup)
             return { choices: groups, current: groupState, searchable: true, pick: (g) => setGroup(g) };
         return null;
@@ -253,7 +275,7 @@ FocusScope {
         id: card
         backdrop: root.backdrop
         anchors.centerIn: parent
-        width: Math.min(460, root.width * 0.86)
+        width: Math.min(root.page === "Enclosed" ? 520 : 460, root.width * 0.86)   // Enclosed's long title needs room
         height: Math.min(bar.height + 12 + (pageLoader.item ? pageLoader.item.implicitHeight : 0) + 20, root.height * 0.86)
         radius: Theme.rPanel
         // Near-opaque, like the reference: the boxed rows must read cleanly over a busy folder
@@ -273,9 +295,22 @@ FocusScope {
                 icon: "chevron_left"; tip: "Back (Esc)"
                 onClicked: root.back()
             }
+            // Enclosed: Cancel / title / Change, as in GNOME Files
+            IconButton {
+                visible: root.page === "Enclosed"
+                anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+                label: "Cancel"; bg: containsMouse ? Theme.hover : Theme.alpha(Theme.text, 0.08)
+                onClicked: root.back()
+            }
+            IconButton {
+                visible: root.page === "Enclosed"
+                anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+                label: root.enclosedBusy ? "Changing…" : "Change"; active: !root.enclosedBusy; enabledLook: !root.enclosedBusy
+                onClicked: root.applyEnclosed()
+            }
             Text {
                 anchors.centerIn: parent
-                width: parent.width - 120
+                width: parent.width - (root.page === "Enclosed" ? 200 : 120)
                 horizontalAlignment: Text.AlignHCenter
                 visible: root.page !== ""
                 text: root.pageTitle
@@ -305,7 +340,8 @@ FocusScope {
                 sourceComponent: root.page === "" ? mainPage
                                : root.page === "Permissions" ? permissions
                                : root.page === "Open With" ? openWith
-                               : root.page === "Details" ? details : null
+                               : root.page === "Details" ? details
+                               : root.page === "Enclosed" ? enclosedPage : null
             }
         }
     }
@@ -498,6 +534,11 @@ FocusScope {
     Component {
         id: details
         PropsDetails { props: root }
+    }
+
+    Component {
+        id: enclosedPage
+        PropsEnclosed { props: root }
     }
 
     Component {
