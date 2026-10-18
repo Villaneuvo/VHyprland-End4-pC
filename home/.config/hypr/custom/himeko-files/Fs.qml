@@ -153,6 +153,8 @@ Singleton {
         if (mime.startsWith("audio/")) return "audio";
         return "info";
     }
+    // PDF wheel: one page per notch (120); a touchpad's small deltas add up instead of flipping a page each
+    function wheelStep(acc, dy) { const a = acc + dy, n = Math.trunc(a / 120); return { flip: -n + 0, acc: a - n * 120 + 0 }; }
     // Left/Right in Quick Look: stops at the ends; an item no longer listed starts from the first
     function stepIndex(i, d, n) { return i < 0 ? 0 : Math.max(0, Math.min(n - 1, i + d)); }
 

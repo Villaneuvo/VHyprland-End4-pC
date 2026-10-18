@@ -78,6 +78,12 @@ ShellRoot {
         check("step: stops at start", Fs.stepIndex(0, -1, 5), 0);
         check("step: missing item", Fs.stepIndex(-1, 1, 5), 0);
 
+        // ---- PDF wheel: a page per notch (120), touchpads add up small deltas ----
+        check("wheel: one notch down", Fs.wheelStep(0, -120), { flip: 1, acc: 0 });
+        check("wheel: small delta waits", Fs.wheelStep(0, -15), { flip: 0, acc: -15 });
+        check("wheel: deltas add up", Fs.wheelStep(-105, -15), { flip: 1, acc: 0 });
+        check("wheel: two notches up", Fs.wheelStep(0, 240), { flip: -2, acc: 0 });
+        check("wheel: back and forth", Fs.wheelStep(-60, 60), { flip: 0, acc: 0 });
         // ---- motion tokens (Theme) ----
         check("curve: fastSpatial", Theme.curve.fastSpatial, [0.42, 1.67, 0.21, 0.90, 1, 1]);
         check("curve: enter", Theme.curve.enter, [0.05, 0.7, 0.1, 1, 1, 1]);

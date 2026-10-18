@@ -167,6 +167,7 @@ FocusScope {
             readonly property real naturalWidth: pic.status === Image.Ready ? pic.implicitWidth : 0
             readonly property bool gif: (root.item.suffix || "").toLowerCase() === "gif"
             readonly property Image pic: gif ? anim : still
+            signal failed()              // empty or corrupt picture: the info card says so instead of a blank card
             Image {
                 id: still
                 anchors.fill: parent
@@ -176,6 +177,7 @@ FocusScope {
                 // Decoded at the largest size the card can take, not at full resolution
                 sourceSize: Qt.size(root.maxW * Screen.devicePixelRatio, root.maxH * Screen.devicePixelRatio)
                 source: parent.gif ? "" : Fs.uri(root.item.path)
+                onStatusChanged: if (status === Image.Error) parent.failed()
             }
             AnimatedImage {
                 id: anim
@@ -183,6 +185,7 @@ FocusScope {
                 visible: parent.gif
                 fillMode: Image.PreserveAspectFit
                 source: parent.gif ? Fs.uri(root.item.path) : ""
+                onStatusChanged: if (status === Image.Error) parent.failed()
             }
         }
     }

@@ -17,7 +17,7 @@ Item {
     function flip(d) { if (pages) page = Math.max(1, Math.min(pages, page + d)); }
     // Answers for another item or page than the one now shown are dropped
     function load() {
-        pages = 0; page = 1; shown = "";
+        pages = 0; page = 1; shown = ""; wheelAcc = 0;
         const it = item;
         Fs.run([Fs.ops, "pages", it.path], (text, code) => {
             if (root.item !== it) return;
@@ -37,7 +37,10 @@ Item {
         });
     }
     onItemChanged: load()
-    onPageChanged: render()
+    onPageChanged: settle.restart()
+    // Flipping fast renders only the page you stop on
+    Timer { id: settle; interval: 120; onTriggered: root.render() }
+    property real wheelAcc: 0
     Component.onCompleted: load()
 
     ColumnLayout {
@@ -56,7 +59,7 @@ Item {
             }
             MouseArea {
                 anchors.fill: parent
-                onWheel: (e) => root.flip(e.angleDelta.y < 0 ? 1 : -1)
+                onWheel: (e) => { const w = Fs.wheelStep(root.wheelAcc, e.angleDelta.y); root.wheelAcc = w.acc; if (w.flip) root.flip(w.flip); }
             }
         }
         RowLayout {

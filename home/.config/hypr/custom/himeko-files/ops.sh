@@ -9,6 +9,7 @@
 #   ops.sh extract ARCHIVE               -> created folder
 #   ops.sh pages PDF                     -> page count (exit 1 if unreadable)
 #   ops.sh page PDF N WIDTH OUT          -> page N as a WIDTH px wide PNG at OUT
+#   ops.sh fontstyle FONT                -> its style name ("Bold", "Italic", …)
 #   ops.sh text FILE                     -> its first 256 KB; exit 3 (no output) when they hold a NUL byte (binary)
 #   ops.sh thumbexts                     -> extensions that have a thumbnailer, one per line
 #   ops.sh thumb SRC DST SIZE KIND       -> exit 0 when DST was written (KIND: the app's kind, image/video/…)
@@ -36,6 +37,9 @@ sandbox() {
         --symlink usr/sbin /sbin --ro-bind /etc /etc --proc /proc --dev /dev --bind "$sbdir" /tmp \
         --ro-bind "$src" "$(inpath "$src")" --unshare-all --die-with-parent --new-session "$@"
 }
+# Only a regular file counts as output: a symlink would point the shared cache at a host file
+sbout() { [ -f "$sbdir/$1" ] && [ ! -L "$sbdir/$1" ] && [ -s "$sbdir/$1" ]; }
+unsandbox() { chmod -R u+rwX -- "$sbdir" 2>/dev/null; rm -rf -- "$sbdir"; }   # chmod: the command may lock dirs
 thumbnailers() { # usable .thumbnailer files, user dir first; glycin-* start their own bwrap, which can't nest in ours
     local d f b try seen=" " IFS=:
     for d in ${HF_THUMBNAILERS:-$HOME/.local/share/thumbnailers:/usr/share/thumbnailers}; do
@@ -87,17 +91,19 @@ text)
     tmp=$(mktemp); head -c 262144 -- "$1" >"$tmp" || { rm -f -- "$tmp"; exit 1; }
     if [ "$(tr -d '\0' <"$tmp" | wc -c)" != "$(wc -c <"$tmp")" ]; then rm -f -- "$tmp"; exit 3; fi
     cat -- "$tmp"; rm -f -- "$tmp" ;;
+fontstyle)
+    { sandbox "$1" fc-scan --format '%{style[0]}\n' "$(inpath "$1")" 2>/dev/null; unsandbox; } | head -1 ;;
 pages)
     # one subshell for the sandbox and its cleanup: $sbdir is set inside it
-    n=$({ sandbox "$1" pdfinfo "$(inpath "$1")" 2>/dev/null; rm -rf -- "$sbdir"; } | awk '/^Pages:/ { print $2 }')
+    n=$({ sandbox "$1" pdfinfo "$(inpath "$1")" 2>/dev/null; unsandbox; } | awk '/^Pages:/ { print $2 }')
     [ -n "$n" ] && printf '%s\n' "$n" || exit 1 ;;
 page)
     src=$1 n=$2 width=$3 out=$4
     [ -s "$out" ] && exit 0      # rendered before (the name carries the file's mtime)
     sandbox "$src" pdftoppm -f "$n" -l "$n" -scale-to-x "$width" -scale-to-y -1 -png -singlefile "$(inpath "$src")" \
         /tmp/gnome-desktop-out >/dev/null 2>&1
-    if [ -s "$sbdir/gnome-desktop-out.png" ]; then mkdir -p -- "$(dirname -- "$out")" && mv -- "$sbdir/gnome-desktop-out.png" "$out"; ok=$?; else ok=1; fi
-    rm -rf -- "$sbdir"; exit $ok ;;
+    if sbout gnome-desktop-out.png; then mkdir -p -- "$(dirname -- "$out")" && mv -- "$sbdir/gnome-desktop-out.png" "$out"; ok=$?; else ok=1; fi
+    unsandbox; exit $ok ;;
 thumbexts)
     thumbnailers | while read -r f; do sed -n 's/^MimeType=//p' "$f" | tr ';' '\n'; done | grep . | sort -u |
         awk -F: 'NR == FNR { m[$0] = 1; next } ($2 in m) && $3 ~ /^\*\.[A-Za-z0-9+_-]+$/ { print tolower(substr($3, 3)) }' \
@@ -123,12 +129,12 @@ thumb)
         done < <(thumbnailers) ;;
     esac
     [ ${#cmd[@]} -gt 0 ] && sandbox "$src" "${cmd[@]}" >/dev/null 2>&1
-    if [ -s "${sbdir:-/nonexistent}/gnome-desktop-out.png" ]; then
+    if [ -n "${sbdir:-}" ] && sbout gnome-desktop-out.png; then
         mkdir -p -- "$(dirname -- "$dst")" && mv -- "$sbdir/gnome-desktop-out.png" "$dst"; ok=$?
     else
         mkdir -p -- "$(dirname -- "$fail")" && : >"$fail"; ok=1
     fi
-    [ -n "${sbdir:-}" ] && rm -rf -- "$sbdir"
+    [ -n "${sbdir:-}" ] && unsandbox
     exit $ok ;;
 selftest)
     t=$(mktemp -d -p "${XDG_CACHE_HOME:-$HOME/.cache}"); trap 'rm -rf -- "$t"' EXIT; me=$0; fail=0
@@ -191,6 +197,16 @@ selftest)
     printf 'hello <b>x</b>\n' >"$t/t.txt"; check "text" "$("$me" text "$t/t.txt")" "hello <b>x</b>"
     printf 'a\0b' >"$t/bin.txt"; "$me" text "$t/bin.txt" >/dev/null; check "binary" "$?" "3"
     yes 'a line of text' | head -c 300000 >"$t/big.log"; check "text is capped" "$("$me" text "$t/big.log" | wc -c)" "262144"
+    # ---- review fixes: font style, sandbox output and cleanup ----
+    bold=$(fc-list :style=Bold file | cut -d: -f1 | grep -m1 '\.ttf$')
+    check "fontstyle" "$("$me" fontstyle "$bold")" "Bold"
+    printf '[Thumbnailer Entry]\nExec=ln -s /etc/hostname %%o\nMimeType=application/x-hf-test;\n' >"$t/th/evil.thumbnailer"
+    HF_THUMBNAILERS=$t/th HF_MIME=application/x-hf-test "$me" thumb "$t/x.hftest" "$t/large/z.png" 256 file
+    check "symlink output refused" "$([ -L "$t/large/z.png" ] || [ -e "$t/large/z.png" ] && echo planted || echo refused)" "refused"
+    mkdir -p "$t/run"
+    printf '[Thumbnailer Entry]\nExec=sh -c "mkdir /tmp/locked; touch /tmp/locked/f; chmod 000 /tmp/locked"\nMimeType=application/x-hf-test;\n' >"$t/th/evil.thumbnailer"
+    XDG_RUNTIME_DIR=$t/run HF_THUMBNAILERS=$t/th HF_MIME=application/x-hf-test "$me" thumb "$t/x.hftest" "$t/large/w.png" 256 file
+    check "sandbox dir removed" "$(ls -A "$t/run" | wc -l)" "0"
     exit $fail ;;
 *) echo "usage: see the header of $0" >&2; exit 2 ;;
 esac

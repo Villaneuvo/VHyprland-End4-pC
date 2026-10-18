@@ -906,7 +906,11 @@ FocusScope {
             onClose: root.closeLook()
             onStep: (d) => root.lookStep(d)
             onOpen: { const it = root.lookShown; root.closeLook(); root.activate(it); }
-            onFaded: root.lookShown = null
+            onFaded: {
+                root.lookShown = null;
+                // Rendered PDF pages live on tmpfs (RAM): drop them once Quick Look is closed
+                Quickshell.execDetached(["rm", "-rf", Quickshell.env("XDG_RUNTIME_DIR") + "/himeko-files/pages"]);
+            }
         }
         onLoaded: item.forceActiveFocus()
     }
