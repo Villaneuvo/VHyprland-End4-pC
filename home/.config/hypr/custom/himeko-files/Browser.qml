@@ -885,7 +885,7 @@ FocusScope {
         function lookStep(d: int): void { if (root.lookItem) root.lookStep(d); }
         function lookState(): string {
             const q = lookLoader.item, b = q ? q.body : null;
-            return JSON.stringify({ open: root.lookItem !== null, type: q ? q.type : "", name: root.lookItem ? root.lookItem.name : "",
+            return JSON.stringify({ open: root.lookItem !== null, type: q ? q.shownType : "", name: root.lookItem ? root.lookItem.name : "",
                                     page: b && b.page !== undefined ? b.page : 0, pages: b && b.pages !== undefined ? b.pages : 0,
                                     playing: !!(b && b.playing), muted: !!(b && b.muted) });
         }

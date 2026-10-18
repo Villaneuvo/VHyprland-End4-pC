@@ -20,6 +20,8 @@ FocusScope {
     property string appName: ""
     readonly property string type: Fs.previewType(kind, mime)
     readonly property Item body: bodyLoader.item
+    property bool bodyFailed: false        // a body couldn't load its file: show the info card instead
+    readonly property string shownType: bodyFailed ? "info" : type
 
     // Answers for an item we've moved past are dropped
     function ask() {
@@ -33,7 +35,7 @@ FocusScope {
             root.appName = d ? d.name : "";
         });
     }
-    onItemChanged: { ask(); bodyFade.restart(); }
+    onItemChanged: { bodyFailed = false; ask(); bodyFade.restart(); }
     Component.onCompleted: ask()
 
     property real reveal: shown ? 1 : 0
@@ -75,8 +77,10 @@ FocusScope {
     // Small pictures aren't blown up past their own size (the card keeps room for the header)
     readonly property real natural: body && body.naturalWidth ? Math.max(380, body.naturalWidth / Screen.devicePixelRatio) : maxW
     readonly property real bodyW: aspect ? Math.min(maxW - 32, natural, (maxH - chromeH) * aspect)
-                                         : reading ? Math.min(760, maxW) - 32 : Math.min(460, maxW) - 32
-    readonly property real bodyH: aspect ? bodyW / aspect : reading ? maxH - chromeH : Math.min(380, maxH) - chromeH
+                                         : reading ? Math.min(760, maxW) - 32
+                                         : Math.min(body && body.prefW ? body.prefW : 428, maxW - 32)
+    readonly property real bodyH: aspect ? bodyW / aspect : reading ? maxH - chromeH
+                                         : Math.min(body && body.prefH ? body.prefH : 380 - chromeH, maxH - chromeH)
 
     Glass {
         id: card
@@ -138,9 +142,16 @@ FocusScope {
                 Loader {
                     id: bodyLoader
                     anchors.fill: parent
-                    sourceComponent: root.type === "image" ? imageBody
+                    sourceComponent: root.bodyFailed ? infoBody
+                                   : root.type === "image" ? imageBody
+                                   : root.type === "video" || root.type === "audio" ? mediaBody
                                    : root.type === "folder" ? folderBody
                                    : root.type === "" ? null : infoBody
+                }
+                Connections {
+                    target: bodyLoader.item
+                    ignoreUnknownSignals: true
+                    function onFailed() { root.bodyFailed = true; }
                 }
             }
         }
@@ -161,16 +172,21 @@ FocusScope {
                 fillMode: Image.PreserveAspectFit
                 // Decoded at the largest size the card can take, not at full resolution
                 sourceSize: Qt.size(root.maxW * Screen.devicePixelRatio, root.maxH * Screen.devicePixelRatio)
-                source: parent.gif ? "" : "file://" + root.item.path
+                source: parent.gif ? "" : Fs.uri(root.item.path)
             }
             AnimatedImage {
                 id: anim
                 anchors.fill: parent
                 visible: parent.gif
                 fillMode: Image.PreserveAspectFit
-                source: parent.gif ? "file://" + root.item.path : ""
+                source: parent.gif ? Fs.uri(root.item.path) : ""
             }
         }
+    }
+
+    Component {
+        id: mediaBody
+        LookMedia { item: root.item; video: root.type === "video" }
     }
 
     Component {
@@ -200,8 +216,9 @@ FocusScope {
             Item { Layout.fillHeight: true }
             Thumb { Layout.alignment: Qt.AlignHCenter; item: root.item; implicitWidth: 160; implicitHeight: 160; iconSize: 64 }
             Repeater {
-                model: [Fs.labelOf(root.kind, root.item.suffix) + " · " + Fs.size(root.item.size),
-                        "Modified " + Fs.date(root.item.modified), root.item.path.replace(Fs.home, "~")]
+                model: (root.bodyFailed ? ["Can't preview this " + (root.kind === "pdf" ? "PDF" : "file")] : []).concat([
+                        Fs.labelOf(root.kind, root.item.suffix) + " · " + Fs.size(root.item.size),
+                        "Modified " + Fs.date(root.item.modified), root.item.path.replace(Fs.home, "~")])
                 delegate: Text {
                     required property string modelData
                     required property int index
