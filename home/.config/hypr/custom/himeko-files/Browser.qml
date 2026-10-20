@@ -68,13 +68,17 @@ FocusScope {
         else if (i < tabIndex) tabIndex--;
         t.destroy();
     }
-    Component.onCompleted: { newTab(startPath); view.forceActiveFocus(); if (startAddress) openAddress(startAddress); }
+    Component.onCompleted: {
+        newTab(startPath); view.forceActiveFocus();
+        if (startAddress) openAddress(startAddress);
+        Fs.run([Fs.ops, "net", "schemes"], (text) => root.schemes = Fs.lines(text));
+    }
 
     readonly property string title: tab ? tab.name : "Files"
 
     readonly property var sorts: (tab && tab.place === "recent" ? [["used", "Last opened"]] : [])
         .concat([["name", "Name"], ["modified", "Modified"], ["size", "Size"], ["kind", "Kind"]], tab && tab.virtual ? [["location", "Location"]] : [])
-    readonly property string placeIcon: !tab ? "" : tab.place === "recent" ? "schedule" : tab.place === "starred" ? "star" : ""
+    readonly property string placeIcon: !tab ? "" : tab.place === "recent" ? "schedule" : tab.place === "starred" ? "star" : tab.place === "network" ? "language" : ""
     // ---- actions ----
     function openLocation(item) { tab.go(Fs.parentOf(item.path)); pendingSelect = item.path; }
     property string pendingSelect: ""      // Open Item Location: selected once the folder has listed it
@@ -126,7 +130,7 @@ FocusScope {
     function goTo(text) {
         if (Fs.isAddress(text.trim())) return openAddress(text);
         let p = text.trim().replace(/^~(?=\/|$)/, Fs.home);
-        if (p === Fs.recentPath || p === Fs.starredPath) return tab.go(p);
+        if (p === Fs.recentPath || p === Fs.starredPath || p.startsWith("network:")) return tab.go(p);
         if (p.startsWith("file://")) p = decodeURIComponent(p.slice(7));
         if (!p.startsWith("/")) p = tab.path + "/" + p;
         Fs.run(["test", "-d", p], (t, code) => code ? Fs.failed("No such folder: " + text) : tab.go(p));
@@ -308,6 +312,7 @@ FocusScope {
         else if ((alt && k === Qt.Key_Up) || k === Qt.Key_Backspace) tab.goUp();
         else if (alt && (k === Qt.Key_Return || k === Qt.Key_Enter)) openProps(tab.selectedItems);
         else if (k === Qt.Key_F2) startRename();
+        else if (k === Qt.Key_F5 && tab.place === "network") networkPage.item?.refresh();
         else if (k === Qt.Key_F5) { tab.countedPath = ""; tab.counts = null; tab.reload(); }
         else if (k === Qt.Key_F9) railForced = !railForced;
         else if (k === Qt.Key_F11) infoOpen = !infoOpen;
@@ -378,7 +383,7 @@ FocusScope {
                 IconGrid {
                     id: iconView
                     anchors.fill: parent
-                    opacity: root.tab && root.tab.viewMode === "icons" ? 1 : 0
+                    opacity: root.tab && root.tab.viewMode === "icons" && root.tab.place !== "network" ? 1 : 0
                     visible: opacity > 0
                     Behavior on opacity { Anim { kind: "effects" } }
                     tab: root.tab
@@ -395,7 +400,7 @@ FocusScope {
                 DetailsList {
                     id: detailsView
                     anchors.fill: parent
-                    opacity: root.tab && root.tab.viewMode === "details" ? 1 : 0
+                    opacity: root.tab && root.tab.viewMode === "details" && root.tab.place !== "network" ? 1 : 0
                     visible: opacity > 0
                     Behavior on opacity { Anim { kind: "effects" } }
                     tab: root.tab
@@ -409,9 +414,16 @@ FocusScope {
                     onRenameCancelled: { root.renamingPath = ""; view.forceActiveFocus(); }
                 }
 
+                Loader {
+                    id: networkPage
+                    anchors.fill: parent
+                    active: root.tab !== null && root.tab.place === "network"
+                    sourceComponent: NetworkPage { tab: root.tab; browser: root }
+                }
+
                 // Empty states
                 ColumnLayout {
-                    visible: root.tab && root.tab.ready && root.tab.items.length === 0
+                    visible: root.tab && root.tab.ready && root.tab.items.length === 0 && root.tab.place !== "network"
                     anchors.centerIn: parent
                     anchors.verticalCenterOffset: 60
                     spacing: 10
@@ -731,9 +743,68 @@ FocusScope {
                 IconButton { icon: "add"; tip: "New tab (Ctrl+T)"; fg: Theme.textDim; onClicked: root.newTab(root.tab.path) }
             }
 
+            // ---- Network page: the address bar takes the status capsule's place ----
+            Glass {
+                id: addressBar
+                visible: root.tab !== null && root.tab.place === "network"
+                backdrop: view
+                anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 16 }
+                width: Math.min(560, parent.width - 48); implicitHeight: 52
+                tint: Theme.chromeStrong
+                function connectNow() { if (address.text.trim()) { root.openAddress(address.text, true); address.text = ""; view.forceActiveFocus(); } }
+                RowLayout {
+                    anchors { fill: parent; leftMargin: 18; rightMargin: 6 }
+                    spacing: 6
+                    Icon { name: "language"; size: 18; color: Theme.textDim }
+                    TextInput {
+                        id: address
+                        Layout.fillWidth: true
+                        clip: true
+                        color: Theme.text; selectionColor: Theme.primary; selectedTextColor: Theme.inkPrimary
+                        font.family: Theme.font; font.pixelSize: 14
+                        selectByMouse: true
+                        onAccepted: addressBar.connectNow()
+                        Keys.onEscapePressed: { text = ""; view.forceActiveFocus(); }
+                        Text { visible: !parent.text && !parent.activeFocus; text: "Server address"; color: Theme.textDim; font: parent.font }
+                    }
+                    IconButton { label: "Connect"; active: address.text.trim() !== ""; enabledLook: address.text.trim() !== ""; implicitHeight: 40; onClicked: addressBar.connectNow() }
+                    IconButton { id: infoBtn; icon: "info"; tip: "Server Addresses"; implicitHeight: 40; implicitWidth: 40; onClicked: root.addressHelp = !root.addressHelp }
+                }
+            }
+            Glass {
+                visible: root.addressHelp && addressBar.visible
+                backdrop: view
+                tint: Theme.alpha(Theme.surfaceHigh, 0.97)
+                radius: 16
+                width: Math.min(400, parent.width - 48)
+                height: helpCol.implicitHeight + 32
+                anchors { right: addressBar.right; bottom: addressBar.top; bottomMargin: 10 }
+                ColumnLayout {
+                    id: helpCol
+                    anchors { left: parent.left; right: parent.right; top: parent.top; margins: 16 }
+                    spacing: 8
+                    Text { text: "Server Addresses"; color: Theme.text; font.family: Theme.font; font.pixelSize: 15; font.weight: 650 }
+                    Text { Layout.fillWidth: true; wrapMode: Text.Wrap; text: "Server addresses are made up of a protocol prefix and an address. Examples:"; color: Theme.text; font.family: Theme.font; font.pixelSize: 13 }
+                    Text { Layout.fillWidth: true; wrapMode: Text.Wrap; text: "smb://gnome.org, ssh://192.168.0.1, ftp://[2001:db8::1]"; textFormat: Text.PlainText; color: Theme.textDim; font.family: Theme.font; font.pixelSize: 13 }
+                    Text { Layout.topMargin: 6; text: "Available Protocols"; color: Theme.text; font.family: Theme.font; font.pixelSize: 13; font.weight: 650 }
+                    Repeater {
+                        model: [["AppleTalk", "afp://", "afp"], ["File Transfer Protocol", "ftp:// or ftps://", "ftp"], ["Network File System", "nfs://", "nfs"],
+                                ["Samba", "smb://", "smb"], ["SSH File Transfer Protocol", "sftp:// or ssh://", "sftp"], ["WebDAV", "dav:// or davs://", "dav"]]
+                            .filter(r => root.schemes.indexOf(r[2]) >= 0)
+                        delegate: RowLayout {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            Text { Layout.fillWidth: true; text: modelData[0]; color: Theme.text; font.family: Theme.font; font.pixelSize: 13 }
+                            Text { text: modelData[1]; textFormat: Text.PlainText; color: Theme.textDim; font.family: Theme.font; font.pixelSize: 13 }
+                        }
+                    }
+                }
+            }
+
             // ---- status capsule ----
             Glass {
                 id: status
+                visible: !addressBar.visible
                 backdrop: view
                 anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 16 }
                 implicitWidth: statusRow.implicitWidth + 28; implicitHeight: 52
@@ -931,6 +1002,11 @@ FocusScope {
         function go(path: string): void { root.goTo(path); }
         function view(mode: string): void { root.tab.viewMode = mode; }
         function address(text: string): void { root.openAddress(text); }
+        function netRows(): string { return networkPage.item ? JSON.stringify(networkPage.item.rows()) : "[]"; }
+        function netAddressHelp(on: bool): void { root.addressHelp = on; }
+        function netRemove(address: string): void { networkPage.item?.removePrevious(address); }
+        function netType(text: string): void { address.text = text; }
+        function netConnect(): void { addressBar.connectNow(); }
         function authState(): string { return authLoader.item ? JSON.stringify(authLoader.item.state()) : ""; }
         function authFill(json: string): void { authLoader.item?.fill(JSON.parse(json)); }
         function authAnswer(button: string): void { authLoader.item?.press(button); }
@@ -1038,6 +1114,9 @@ FocusScope {
         }
         onLoaded: item.forceActiveFocus()
     }
+
+    property bool addressHelp: false
+    property var schemes: []            // what gvfs can connect to here (the address help lists only those)
 
     // ---- gvfs asks: password or question, one at a time ----
     property var asks: []

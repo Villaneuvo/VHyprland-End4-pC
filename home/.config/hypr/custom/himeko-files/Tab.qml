@@ -25,10 +25,11 @@ QtObject {
     function countOf(p) { return Fs.countOf(counts, p); }
 
     // Recent and Starred aren't folders: places.py lists them
-    readonly property string place: path === Fs.recentPath ? "recent" : path === Fs.starredPath ? "starred" : ""
+    readonly property string place: path === Fs.recentPath ? "recent" : path === Fs.starredPath ? "starred" : path.startsWith("network:") ? "network" : ""
     readonly property bool virtual: place !== ""
     readonly property bool ready: virtual ? loadedPath === path : listPath !== "" && model.status === FolderListModel.Ready
     readonly property string name: place === "recent" ? "Recent" : place === "starred" ? "Starred"
+        : place === "network" ? (path.length > 8 ? Fs.netHost(path.slice(8)) : "Network")
         : path === "/" ? "/" : path === Fs.home ? "Home" : path.slice(path.lastIndexOf("/") + 1)
     readonly property bool inTrash: path === Fs.trashDir || path.startsWith(Fs.trashDir + "/")
 
@@ -80,6 +81,7 @@ QtObject {
     readonly property Timer reloadTimer: Timer { interval: 60; onTriggered: tab.reload() }
 
     function reloadPlace() {
+        if (place === "network") { all = []; loadedPath = path; return; }   // NetworkPage lists it
         const asked = path;
         const done = (list) => {
             if (tab.path !== asked) return;   // answer for a place we left
