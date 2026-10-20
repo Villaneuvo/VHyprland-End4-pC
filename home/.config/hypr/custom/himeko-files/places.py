@@ -4,9 +4,11 @@
   recent add PATH | remove PATH...
   starred list                 -> path isDir size mtime (existing only)
   starred add|remove PATH...
-  bookmarks pin PATH [LABEL] | unpin PATH | rename PATH LABEL | move PATH -1|1   (GTK's bookmarks file)
+  bookmarks pin PATH [LABEL] | unpin PATH | rename PATH LABEL | move PATH -1|1   (GTK's bookmarks file;
+                                 PATH may also be a network address, sftp://host/dir)
+  servers list | add ADDRESS | remove ADDRESS   -> the servers you connected to (Nautilus' history), newest first
   moved OLD NEW [OLD NEW...]   -> stars, pins and recent entries follow renames/moves
-Env: HF_RECENT, HF_STARRED, XDG_CONFIG_HOME. Writes: temp file next to the real target + rename, mode kept."""
+Env: HF_RECENT, HF_STARRED, HF_SERVERS, XDG_CONFIG_HOME. Writes: temp file next to the real target + rename, mode kept."""
 import fcntl
 import os
 import sys
@@ -18,6 +20,7 @@ from gi.repository import GLib
 HOME = os.path.expanduser("~")
 RECENT = os.environ.get("HF_RECENT") or os.path.join(HOME, ".local/share/recently-used.xbel")
 STARRED = os.environ.get("HF_STARRED") or os.path.join(HOME, ".local/state/himeko-files/starred")
+SERVERS = os.environ.get("HF_SERVERS") or os.path.join(HOME, ".local/share/gtk-4.0/servers")
 BOOKMARKS = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config"), "gtk-3.0/bookmarks")
 
 
@@ -91,16 +94,41 @@ def row(path, *extra):
 
 # ---- recent (GLib's own parser and writer: other apps read this file) ----
 
-def load_recent():
+def load_xbel(path):
     bf = GLib.BookmarkFile()
-    data = read(RECENT)
+    data = read(path)
     if data.strip():
         bf.load_from_data(data)
     return bf
 
 
+def load_recent():
+    return load_xbel(RECENT)
+
+
 def save_recent(bf):
     atomic_write(RECENT, bf.to_data(), 0o600)
+
+
+# ---- servers (Nautilus 50 / GTK4's "Previous" connections, XBEL) ----
+
+def servers_list():
+    bf = load_xbel(SERVERS)
+    stamp = lambda u: bf.get_modified_date_time(u).to_unix()
+    return sorted(bf.get_uris(), key=stamp, reverse=True)
+
+
+def servers_change(op, address):
+    bf = load_xbel(SERVERS)
+    if op == "add":
+        bf.add_application(address, "Himeko Files", "himeko-files %u")   # GLib drops items with no application
+        bf.set_modified_date_time(address, GLib.DateTime.new_now_utc())
+    else:
+        try:
+            bf.remove_item(address)
+        except GLib.Error:
+            return
+    atomic_write(SERVERS, bf.to_data())
 
 
 def recent_list(limit=300):
@@ -186,17 +214,37 @@ def save_bookmarks(lines):
     atomic_write(BOOKMARKS, "".join(line + "\n" for line in lines).encode(errors="surrogateescape"))
 
 
+def is_address(s):
+    return "://" in s and not s.startswith("file://")
+
+
+def target_uri(s):
+    """The bookmark URI for a path or a network address (trailing slashes dropped, except at the server's root)."""
+    if not is_address(s):
+        return uri_of(s)
+    scheme, _, rest = s.partition("://")
+    host, slash, path = rest.partition("/")
+    path = path.rstrip("/")
+    return f"{scheme}://{host}/{path}" if path or slash else s
+
+
 def line_path(line):
     return path_of(line.partition(" ")[0])
 
 
-def find_pin(lines, path):
-    path = os.path.abspath(path)
-    return next((i for i, line in enumerate(lines) if line_path(line) == path), -1)
+def pin_key(s):
+    """What makes two pins the same place: the local path, or the address."""
+    path = path_of(s) if s.startswith("file://") else None if is_address(s) else os.path.abspath(s)
+    return ("path", path) if path is not None else ("uri", target_uri(s)) if is_address(s) else None
 
 
-def pin_line(path, label):
-    return uri_of(path) + (" " + label if label else "")
+def find_pin(lines, target):
+    key = pin_key(target)
+    return next((i for i, line in enumerate(lines) if pin_key(line.partition(" ")[0]) == key), -1)
+
+
+def pin_line(target, label):
+    return target_uri(target) + (" " + label if label else "")
 
 
 def bookmarks(op, args):
@@ -216,9 +264,9 @@ def bookmarks(op, args):
         lines[i] = pin_line(args[0], args[1].replace("\n", " ").strip())
     elif op == "move" and len(args) == 2 and args[1] in ("-1", "1"):
         d = int(args[1])
-        # Swap with the next pinned folder that way; other schemes (not shown) stay where they are
+        # Swap with the next pin that way; lines the sidebar doesn't show stay where they are
         j = i + d
-        while 0 <= j < len(lines) and line_path(lines[j]) is None:
+        while 0 <= j < len(lines) and pin_key(lines[j].partition(" ")[0]) is None:
             j += d
         if not 0 <= j < len(lines):
             return
@@ -288,6 +336,10 @@ def main(argv):
         lines(filter(None, map(row, load_starred())))
     elif what == "starred" and op in ("add", "remove") and len(args) > 1:
         (starred_add if op == "add" else starred_remove)(args[1:])
+    elif what == "servers" and op == "list":
+        lines(servers_list())
+    elif what == "servers" and op in ("add", "remove") and len(args) == 2:
+        servers_change(op, args[1])
     elif what == "bookmarks" and op in ("pin", "unpin", "rename", "move"):
         bookmarks(op, args[1:])
     elif what == "moved" and args and len(args) % 2 == 0:

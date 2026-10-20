@@ -23,7 +23,7 @@
 #   ops.sh text FILE                     -> its first 256 KB; exit 3 (no output) when they hold a NUL byte (binary)
 #   ops.sh thumbexts                     -> extensions that have a thumbnailer, one per line
 #   ops.sh thumb SRC DST SIZE KIND       -> exit 0 when DST was written (KIND: the app's kind, image/video/…)
-#   ops.sh recent|starred|bookmarks …    -> places.py (Recent, Starred, pinned folders); placesmoved OLD NEW
+#   ops.sh recent|starred|bookmarks|servers … -> places.py (Recent, Starred, pinned folders); placesmoved OLD NEW
 # Thumbnailers, ImageMagick and ffmpeg parse untrusted files, so they run in bwrap (see sandbox).
 # Env: HF_THUMBNAILERS (colon-separated thumbnailer dirs), HF_MIME (tests: skip MIME detection)
 set -u
@@ -66,7 +66,7 @@ thumbnailers() { # usable .thumbnailer files, user dir first; glycin-* start the
 
 cmd=${1:-}; shift || true
 case "$cmd" in
-recent|starred|bookmarks) exec python3 -I "$(dirname -- "$0")/places.py" "$cmd" "$@" ;;
+recent|starred|bookmarks|servers) exec python3 -I "$(dirname -- "$0")/places.py" "$cmd" "$@" ;;
 placesmoved) exec python3 -I "$(dirname -- "$0")/places.py" moved "$@" ;;
 paste)
     mode=$1 dest=$2; shift 2
@@ -478,6 +478,20 @@ import os; os.replace(sys.argv[1]+'.tmp', sys.argv[1])" "$t/recent.xbel"; done )
     "$me" recent remove "$t/pm/a2" "$t/pm/b2"
     check "recent remove: several paths" "$("$me" recent list | grep -c '/pm/')" "0"
     unset HF_RECENT HF_STARRED XDG_CONFIG_HOME
+    # ---- network: servers history, bookmarks by address ----
+    export HF_SERVERS=$t/servers XDG_CONFIG_HOME=$t/cfg2
+    "$me" servers add "sftp://host/srv"; "$me" servers add "smb://nas/share"; "$me" servers add "sftp://host/srv"
+    check "servers: re-adding moves it first, no duplicates" "$("$me" servers list | tr '\n' ' ')" "sftp://host/srv smb://nas/share "
+    chmod 640 "$HF_SERVERS"; "$me" servers remove "smb://nas/share"
+    check "servers: remove keeps the rest and the mode" "$("$me" servers list | tr '\n' ' ')$(stat -c %a "$HF_SERVERS")" "sftp://host/srv 640"
+    check "servers: GLib reads it" "$(python3 -I -c 'from gi.repository import GLib; import sys; b=GLib.BookmarkFile(); b.load_from_file(sys.argv[1]); print(len(b.get_uris()))' "$HF_SERVERS")" "1"
+    : >"$t/nb"; B=$t/cfg2/gtk-3.0/bookmarks
+    "$me" bookmarks pin "sftp://host/srv/data"; "$me" bookmarks pin "$t/nb"; "$me" bookmarks pin "sftp://host/srv/data/"
+    "$me" bookmarks rename "sftp://host/srv/data" "Data"; "$me" bookmarks move "sftp://host/srv/data" 1
+    check "bookmarks by address (no trailing-slash duplicate)" "$(sed "s|$t|T|" "$B" | tr '\n' '|')" "file://T/nb|sftp://host/srv/data Data|"
+    "$me" bookmarks unpin "sftp://host/srv/data"
+    check "bookmarks unpin by address" "$(wc -l <"$B")" "1"
+    unset HF_SERVERS XDG_CONFIG_HOME
     exit $fail ;;
 *) echo "usage: see the header of $0" >&2; exit 2 ;;
 esac
