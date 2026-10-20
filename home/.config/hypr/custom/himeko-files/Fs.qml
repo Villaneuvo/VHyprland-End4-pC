@@ -590,6 +590,8 @@ Singleton {
                 if (--left === 0) placesMoved(back);   // one update for the whole undo
             }));
         }
+        else if (a.kind === "copy" && a.paths.some(p => isRemote(p)))   // servers have no Trash: the copies we made go
+            run(["rm", "-rf", "--"].concat(a.paths), (t, c, e) => c ? failed(e.trim()) : toast("Undone", false));
         else if (a.kind === "copy") run([ops, "trash"].concat(a.paths), (t, c, e) => c ? failed(e.trim()) : toast("Undone", false));
     }
 

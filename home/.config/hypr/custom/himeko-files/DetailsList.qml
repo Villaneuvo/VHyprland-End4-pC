@@ -184,7 +184,7 @@ ListView {
                 model: [
                     row.modelData.isDir ? Fs.countLabel(root.tab.countOf(row.modelData.path)) : Fs.size(row.modelData.size),
                     Fs.date(row.modelData.modified),
-                    root.tab.virtual ? Fs.parentOf(row.modelData.path).replace(Fs.home, "~") : Fs.labelOf(row.kind, row.modelData.suffix)
+                    root.tab.virtual ? Fs.displayPath(Fs.parentOf(row.modelData.path)) : Fs.labelOf(row.kind, row.modelData.suffix)
                 ]
                 delegate: Text {
                     required property var modelData

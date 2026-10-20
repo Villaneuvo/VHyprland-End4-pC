@@ -240,7 +240,7 @@ FocusScope {
             Repeater {
                 model: (root.bodyFailed ? ["Can't preview this " + (root.kind === "pdf" ? "PDF" : "file")] : []).concat([
                         Fs.labelOf(root.kind, root.item.suffix) + " · " + Fs.size(root.item.size),
-                        "Modified " + Fs.date(root.item.modified), root.item.path.replace(Fs.home, "~")])
+                        "Modified " + Fs.date(root.item.modified), Fs.displayPath(root.item.path)])
                 delegate: Text {
                     required property string modelData
                     required property int index

@@ -58,7 +58,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.body()
         href = unquote(urlparse(self.path).path)
-        p = self.local(href)
+        p = self.local(self.path)   # the raw path: decoding twice would cut a name at "#"
         if not p or not os.path.exists(p):
             return self.reply(404)
         out = [self.entry(href, p)]

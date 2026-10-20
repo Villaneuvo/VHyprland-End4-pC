@@ -30,6 +30,7 @@ QtObject {
     readonly property bool ready: virtual ? loadedPath === path : listPath !== "" && model.status === FolderListModel.Ready
     readonly property string name: place === "recent" ? "Recent" : place === "starred" ? "Starred"
         : place === "network" ? (path.length > 8 ? Fs.netHost(path.slice(8)) : "Network")
+        : Fs.netMountOf(path, Fs.netMounts)?.path === path ? Fs.netMountOf(path, Fs.netMounts).name   // a server's top folder
         : path === "/" ? "/" : path === Fs.home ? "Home" : path.slice(path.lastIndexOf("/") + 1)
     readonly property bool inTrash: path === Fs.trashDir || path.startsWith(Fs.trashDir + "/")
 
@@ -146,7 +147,9 @@ QtObject {
     }
     function goBack() { if (back.length) { forward = [path].concat(forward); const p = back[back.length - 1]; back = back.slice(0, -1); go(p, false, -1); } }
     function goForward() { if (forward.length) { back = back.concat([path]); const p = forward[0]; forward = forward.slice(1); go(p, false, 1); } }
-    function goUp() { if (path !== "/" && !virtual) go(path.slice(0, path.lastIndexOf("/")) || "/", true, -1); }
+    function goUp() {
+        if (Fs.netMountOf(path, Fs.netMounts)?.path === path) return go("network:", true, -1);   // above a server: Network
+        if (path !== "/" && !virtual) go(path.slice(0, path.lastIndexOf("/")) || "/", true, -1); }
 
     // Selection: plain click selects one, ctrl toggles, shift selects a range in the visible order
     function select(item, mods) {

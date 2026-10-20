@@ -514,7 +514,7 @@ FocusScope {
                 PropRow {
                     show: root.parentPath !== ""
                     title: "Parent Folder"
-                    value: root.parentPath.replace(Fs.home, "~") + (root.parentPath === "/" ? "" : "/")
+                    value: Fs.displayPath(root.parentPath) + (root.parentPath === "/" || Fs.isRemote(root.parentPath) ? "" : "/")
                     icon: "folder_open"; iconTip: "Open the folder"
                     onIconClicked: root.go(root.parentPath)
                 }

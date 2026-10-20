@@ -102,7 +102,7 @@ FocusScope {
     }
     function trashSelection() {
         if (!tab.selectedCount) return;
-        if (tab.inTrash) return confirmDelete();
+        if (tab.inTrash || tab.selectedItems.some(it => Fs.isRemote(it.path))) return confirmDelete();   // servers have no Trash
         Fs.trash(tab.paths());
     }
     function restoreSelection() {
@@ -148,6 +148,12 @@ FocusScope {
         function onFailed(text) { toast.show(text, false, true); }
         function onCreated(path) { root.tab.selectPath(path); root.renamingPath = path; }
         function onNetAsk(req) { root.asks = root.asks.concat([req]); }
+        // A server went away (unmounted here or elsewhere, or dropped): tabs inside it go to Network
+        function onDisconnected(m) {
+            const inside = root.tabs.filter(t => t.path === m.path || t.path.startsWith(m.path + "/"));
+            inside.forEach(t => t.go("network:", true, -1));
+            if (inside.length) Fs.toast("“" + m.name + "” was disconnected", false);
+        }
     }
 
     // ---- menus ----
@@ -511,6 +517,7 @@ FocusScope {
                         readonly property var parts: {
                             if (!root.tab) return [];
                             if (root.tab.virtual) return [{ label: root.tab.name, path: root.tab.path, icon: root.placeIcon }];
+                            if (Fs.isRemote(root.tab.path)) return Fs.netCrumbs(root.tab.path, Fs.netMounts);
                             const p = root.tab.path, out = [];
                             if (p.startsWith(Fs.home)) {
                                 out.push({ label: "Home", path: Fs.home, icon: "home" });
@@ -670,7 +677,7 @@ FocusScope {
             onVisibleChanged: {}
             Connections {
                 target: root
-                function onEditingPathChanged() { if (root.editingPath) { field.text = root.tab.path.replace(Fs.home, "~"); field.forceActiveFocus(); field.selectAll(); } }
+                function onEditingPathChanged() { if (root.editingPath) { field.text = Fs.displayPath(root.tab.path); field.forceActiveFocus(); field.selectAll(); } }
                 function onSearchingChanged() { if (root.searching) { field.text = root.tab.query; field.forceActiveFocus(); field.cursorPosition = field.text.length; } }
             }
 
@@ -1004,6 +1011,13 @@ FocusScope {
         function address(text: string): void { root.openAddress(text); }
         function netRows(): string { return networkPage.item ? JSON.stringify(networkPage.item.rows()) : "[]"; }
         function netAddressHelp(on: bool): void { root.addressHelp = on; }
+        function newFolder(): void { Fs.newFolder(root.tab.path); }
+        function pasteHere(paths: string): void { Fs.doPaste("copy", root.tab.path, paths.split("|")); }
+        function renameItem(name: string, to: string): void { const it = root.tab.items.find(x => x.name === name); if (it) Fs.rename(it.path, to); }
+        function del(): void { root.trashSelection(); }
+        function editPath(on: bool): void { root.editingPath = on; }
+        function undo(): void { Fs.undo(); }
+        function netUnmount(uri: string): void { Fs.unmount(uri, false); }
         function netRemove(address: string): void { networkPage.item?.removePrevious(address); }
         function netType(text: string): void { address.text = text; }
         function netConnect(): void { addressBar.connectNow(); }
