@@ -11,6 +11,7 @@ MouseArea {
     property color fg: active ? Theme.inkPrimary : (enabledLook ? Theme.text : Theme.outline)
     property color bg: active ? Theme.primary : (containsMouse ? Theme.hover : "transparent")
     property real iconSize: 20
+    property bool filled: false
     property int radius: height / 2
     implicitHeight: Theme.target
     implicitWidth: label ? row.implicitWidth + 32 : implicitHeight
@@ -28,7 +29,7 @@ MouseArea {
         id: row
         anchors.centerIn: parent
         spacing: 8
-        Icon { name: root.icon; size: root.iconSize; color: root.fg; visible: root.icon !== ""; anchors.verticalCenter: parent.verticalCenter }
+        Icon { name: root.icon; size: root.iconSize; filled: root.filled; color: root.fg; visible: root.icon !== ""; anchors.verticalCenter: parent.verticalCenter }
         Text {
             visible: root.label !== ""
             text: root.label

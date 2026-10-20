@@ -65,6 +65,15 @@ MouseArea {
         border.color: Theme.outline
     }
 
+    // Starred: a small star at the top left
+    Item {
+        z: 2
+        visible: Fs.isStarred(root.item.path)
+        x: 4; y: 4; width: 24; height: 24
+        Shape { anchors.fill: parent; kind: "cookie"; color: Theme.surfaceHighest }
+        Icon { anchors.centerIn: parent; name: "star"; filled: true; size: 16; color: Theme.primary }
+    }
+
     // ---- wide (folder) ----
     RowLayout {
         visible: root.wide

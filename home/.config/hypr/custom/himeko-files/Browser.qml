@@ -192,6 +192,8 @@ FocusScope {
         if (one && one.isDir) e.push({ icon: "tab", label: "Open in new tab", action: () => newTab(one.path, false) });
         if (one && one.isDir) e.push(Fs.isPinned(one.path) ? { icon: "keep_off", label: "Unpin from Sidebar", hint: "Ctrl+D", action: () => togglePin(one.path) }
                                                            : { icon: "keep", label: "Pin to Sidebar", hint: "Ctrl+D", action: () => togglePin(one.path) });
+        const starredAll = sel.every(it => Fs.isStarred(it.path));
+        e.push({ icon: "star", label: starredAll ? "Unstar" : "Star", action: () => Fs.setStarred(tab.paths(), !starredAll) });
         if (one && tab.virtual) e.push({ icon: "folder_open", label: "Open Item Location", action: () => openLocation(one) });
         if (tab.place === "recent") e.push({ icon: "history_toggle_off", label: "Remove from Recent", action: () => tab.paths().forEach(p => Fs.recentRemove(p)) });
         if (kind === "image") e.push({ icon: "wallpaper", label: "Set as wallpaper", action: () => Fs.setWallpaper(one.path) });
@@ -920,6 +922,8 @@ FocusScope {
         function open(names: string): void { select(names); root.openSelection(); }
         function pin(name: string): void { const it = root.tab.items.find(x => x.name === name), p = it ? it.path : root.tab.path; if (!Fs.isPinned(p)) root.togglePin(p); }
         function unpin(name: string): void { const it = root.tab.items.find(x => x.name === name); Fs.unpin(it ? it.path : name || root.tab.path); }
+        function star(names: string): void { select(names); Fs.setStarred(root.tab.paths(), true); }
+        function unstar(names: string): void { select(names); Fs.setStarred(root.tab.paths(), false); }
         function pinRename(path: string, label: string): void { Fs.renamePin(path, label); }
         function pinRenaming(path: string): void { sidebar.renamingPin = path; }
         function pinMove(path: string, d: int): void { Fs.movePin(path, d); }

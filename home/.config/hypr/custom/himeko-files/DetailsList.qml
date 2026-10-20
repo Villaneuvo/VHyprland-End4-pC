@@ -153,6 +153,9 @@ ListView {
                     text: row.modelData.name
                     textFormat: Text.PlainText   // names can look like markup ("<b>")
                     elide: Text.ElideMiddle
+                    readonly property bool starred: Fs.isStarred(row.modelData.path)
+                    rightPadding: starred ? 24 : 0
+                    Icon { visible: parent.starred; x: parent.contentWidth + 6; anchors.verticalCenter: parent.verticalCenter; name: "star"; filled: true; size: 16; color: Theme.primary }
                     color: row.selected ? Theme.inkPrimaryContainer : Theme.text
                     font.family: Theme.font; font.pixelSize: 14; font.weight: row.selected ? 650 : 500
                 }

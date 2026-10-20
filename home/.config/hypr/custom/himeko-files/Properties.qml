@@ -292,6 +292,14 @@ FocusScope {
             anchors { left: parent.left; right: parent.right; top: parent.top; margins: 8 }
             height: 44
             IconButton {
+                readonly property bool on: Fs.isStarred(root.first.path)
+                visible: root.page === "" && root.one && !root.tab.inTrash && root.first.path.startsWith("/")
+                anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+                icon: "star"; filled: on; fg: on ? Theme.primary : Theme.text
+                tip: on ? "Unstar" : "Star"
+                onClicked: Fs.setStarred([root.first.path], !on)
+            }
+            IconButton {
                 visible: root.page !== "" && root.page !== "Enclosed"
                 anchors { left: parent.left; verticalCenter: parent.verticalCenter }
                 icon: "chevron_left"; tip: "Back (Esc)"
