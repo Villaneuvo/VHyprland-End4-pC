@@ -9,11 +9,13 @@ Rectangle {
     property bool rail: false
     signal open(string path)
     signal openDolphin(string path)
+    signal openAddress(string address)              // a network pin: connect, then open
     signal pinMenu(string path, real x, real y)    // right-click on a pinned folder (x, y in the sidebar)
     property string renamingPin: ""                 // pinned folder whose label is being edited inline
     Component.onCompleted: Fs.checkPins()
     // Asks the disk, not the last check: a drive can come back without the device list changing (LUKS, network)
     function openPin(pin) {
+        if (pin.network) return root.openAddress(pin.uri);
         Fs.run(["test", "-d", pin.path], (t, missing) => {
             if (missing) Fs.toast("This folder isn't available", false);
             else root.open(pin.path);
@@ -33,14 +35,15 @@ Rectangle {
         { name: "Home", icon: "home", path: Fs.home },
         { name: "Recent", icon: "schedule", path: Fs.recentPath },
         { name: "Starred", icon: "star", path: Fs.starredPath },
-        { name: "Network", icon: "language", path: "" },
+        { name: "Network", icon: "language", path: "network:" },
         { name: "Trash", icon: "delete", path: Fs.trashDir, badge: Fs.trashCount }
     ]
 
-    // The place you're in: the deepest place or pin that contains the current folder
+    // The place you're in: the deepest place, pin or server that contains the current folder
     readonly property string activePlace: {
+        if (tab.place === "network") return "network:";
         let best = "";
-        for (const p of places.concat(Fs.pins))
+        for (const p of places.concat(Fs.pins, Fs.netMounts))
             if (p.path && (tab.path === p.path || tab.path.startsWith(p.path + "/")) && p.path.length > best.length) best = p.path;
         return best;
     }
@@ -99,7 +102,7 @@ Rectangle {
                     icon: modelData.icon; label: modelData.name; badge: modelData.badge ?? 0
                     active: modelData.path !== "" && modelData.path === root.activePlace
                     rail: root.rail
-                    onClicked: modelData.path ? root.open(modelData.path) : root.openDolphin("remote:/")
+                    onClicked: root.open(modelData.path)
                 }
             }
 
@@ -116,16 +119,17 @@ Rectangle {
                     id: pinRow
                     required property var modelData
                     Layout.fillWidth: true
-                    icon: Fs.pinIcon(modelData.path, Fs.dirs); label: modelData.name; rail: root.rail
+                    icon: modelData.network ? Fs.netIcon(modelData.uri) : Fs.pinIcon(modelData.path, Fs.dirs); label: modelData.name; rail: root.rail
                     dim: !modelData.exists
-                    renaming: root.renamingPin === modelData.path
-                    active: modelData.path === root.activePlace
+                    renaming: root.renamingPin === modelData.key
+                    active: modelData.path !== "" && modelData.path === root.activePlace
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     onClicked: (m) => {
-                        if (m.button === Qt.RightButton) { const p = mapToItem(root, m.x, m.y); root.pinMenu(modelData.path, p.x, p.y); }
+                        if (m.button === Qt.RightButton) { const p = mapToItem(root, m.x, m.y); root.pinMenu(modelData.key, p.x, p.y); }
                         else root.openPin(modelData);
                     }
-                    onRenamed: (name) => { root.renamingPin = ""; Fs.renamePin(modelData.path, name === modelData.path.slice(modelData.path.lastIndexOf("/") + 1) ? "" : name); }
+                    // Typing the default name back (folder name, or "dir on host") means no label
+                    onRenamed: (name) => { root.renamingPin = ""; Fs.renamePin(modelData.key, name === (modelData.network ? Fs.netPinName(modelData.uri, "") : modelData.path.slice(modelData.path.lastIndexOf("/") + 1)) ? "" : name); }
                     onRenameCancelled: root.renamingPin = ""
                 }
             }
@@ -141,6 +145,20 @@ Rectangle {
                     trailingIcon: modelData.mount ? "eject" : ""
                     onTrailingClicked: Fs.eject(modelData.dev)
                     onClicked: modelData.mount ? root.open(modelData.mount) : Fs.mount(modelData.dev, () => {})
+                }
+            }
+
+            SectionLabel { text: "Connected"; visible: !root.rail && Fs.netMounts.length > 0; Layout.topMargin: 14 }
+            Repeater {
+                model: Fs.netMounts
+                delegate: PlaceRow {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    icon: Fs.netIcon(modelData.uri); label: modelData.name; rail: root.rail
+                    active: modelData.path === root.activePlace
+                    trailingIcon: modelData.canUnmount ? "eject" : ""; trailingTip: "Unmount"
+                    onTrailingClicked: Fs.unmount(modelData.uri, false)
+                    onClicked: root.open(modelData.path)
                 }
             }
 
@@ -186,6 +204,7 @@ Rectangle {
         property bool active: false
         property bool rail: false
         property string trailingIcon: ""
+        property string trailingTip: "Eject"
         property bool dim: false            // a pinned folder that isn't there (unmounted drive)
         property bool renaming: false
         signal trailingClicked()
@@ -244,7 +263,7 @@ Rectangle {
             }
             IconButton {
                 visible: !row.rail && row.trailingIcon !== ""
-                icon: row.trailingIcon; iconSize: 18; tip: "Eject"
+                icon: row.trailingIcon; iconSize: 18; tip: row.trailingTip
                 implicitWidth: 36; implicitHeight: 36
                 onClicked: row.trailingClicked()
             }

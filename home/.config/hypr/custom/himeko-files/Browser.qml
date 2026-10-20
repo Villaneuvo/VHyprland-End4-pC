@@ -167,10 +167,13 @@ FocusScope {
         menuLoader.item?.forceActiveFocus();
     }
     // ---- pinned folders (GTK's bookmarks) ----
+    // What a pin stores: the folder's path, or its network address on a server (so Nautilus understands it)
+    function pinTargetOf(path) { return Fs.isRemote(path) ? Fs.netAddress(path, Fs.netMounts) : path; }
     function togglePin(path) {
-        if (Fs.isPinned(path)) return Fs.unpin(path);
-        Fs.pin(path);
-        Fs.toast("Pinned “" + (path === "/" ? "/" : path.slice(path.lastIndexOf("/") + 1)) + "”", false);
+        const target = pinTargetOf(path);
+        if (Fs.isPinned(target)) return Fs.unpin(target);
+        Fs.pin(target);
+        Fs.toast("Pinned “" + (Fs.isAddress(target) ? Fs.netPinName(target, "") : path === "/" ? "/" : path.slice(path.lastIndexOf("/") + 1)) + "”", false);
     }
     // Ctrl+D: the selected folder, else the folder you're in
     function pinTarget() {
@@ -178,10 +181,11 @@ FocusScope {
         if (sel.length === 1) return sel[0].isDir ? sel[0].path : "";
         return sel.length || tab.virtual || tab.inTrash ? "" : tab.path;
     }
-    function pinMenu(path, x, y) {
-        const i = Fs.pins.findIndex(p => p.path === path), pin = Fs.pins[i];
+    function pinMenu(path, x, y) {   // path: the pin's key (a folder path or a network address)
+        const i = Fs.pins.findIndex(p => p.key === path), pin = Fs.pins[i];
         showMenu(x, y, [], [
-            { icon: "tab", label: "Open in New Tab", disabled: !pin || !pin.exists, action: () => newTab(path, false) },
+            { icon: "tab", label: "Open in New Tab", disabled: !pin || !pin.exists,
+              action: () => { if (pin.network) { newTab("network:"); openAddress(pin.uri); } else newTab(path, false); } },
             { icon: "edit", label: "Rename…", action: () => sidebar.renamingPin = path },
             { separator: true },
             { icon: "arrow_upward", label: "Move Up", disabled: i <= 0, action: () => Fs.movePin(path, -1) },
@@ -211,7 +215,7 @@ FocusScope {
             ? apps.map(a => ({ label: a.name + (a.isDefault ? "  ·  default" : ""), appIcon: Quickshell.iconPath(a.icon, true), action: () => Fs.launchApp(a.id, one.path) }))
             : [{ label: "No apps for this file", disabled: true }])) });
         if (one && one.isDir) e.push({ icon: "tab", label: "Open in new tab", action: () => newTab(one.path, false) });
-        if (one && one.isDir) e.push(Fs.isPinned(one.path) ? { icon: "keep_off", label: "Unpin from Sidebar", hint: "Ctrl+D", action: () => togglePin(one.path) }
+        if (one && one.isDir) e.push(Fs.isPinned(pinTargetOf(one.path)) ? { icon: "keep_off", label: "Unpin from Sidebar", hint: "Ctrl+D", action: () => togglePin(one.path) }
                                                            : { icon: "keep", label: "Pin to Sidebar", hint: "Ctrl+D", action: () => togglePin(one.path) });
         const starredAll = sel.every(it => Fs.isStarred(it.path));
         e.push({ icon: "star", label: starredAll ? "Unstar" : "Star", action: () => Fs.setStarred(tab.paths(), !starredAll) });
@@ -248,7 +252,7 @@ FocusScope {
             { separator: true },
             { icon: "terminal", label: "Open terminal here", action: () => Fs.terminal(tab.path) },
             { icon: "folder_managed", label: "Open in Dolphin", action: () => Fs.openDolphin(tab.path) },
-            Fs.isPinned(tab.path) ? { icon: "keep_off", label: "Unpin from Sidebar", hint: "Ctrl+D", action: () => togglePin(tab.path) }
+            Fs.isPinned(pinTargetOf(tab.path)) ? { icon: "keep_off", label: "Unpin from Sidebar", hint: "Ctrl+D", action: () => togglePin(tab.path) }
                                   : { icon: "keep", label: "Pin to Sidebar", hint: "Ctrl+D", action: () => togglePin(tab.path) },
             { icon: "info", label: "Properties", action: () => openProps([folderItem()]) }
         ]);
@@ -366,6 +370,7 @@ FocusScope {
             rail: root.rail
             onOpen: (p) => { root.tab.go(p); view.forceActiveFocus(); }
             onOpenDolphin: (p) => Fs.openDolphin(p)
+            onOpenAddress: (a) => root.openAddress(a)
             onPinMenu: (path, x, y) => { const p = sidebar.mapToItem(root, x, y); root.pinMenu(path, p.x, p.y); }
         }
 
@@ -1025,7 +1030,7 @@ FocusScope {
         function authFill(json: string): void { authLoader.item?.fill(JSON.parse(json)); }
         function authAnswer(button: string): void { authLoader.item?.press(button); }
         function open(names: string): void { select(names); root.openSelection(); }
-        function pin(name: string): void { const it = root.tab.items.find(x => x.name === name), p = it ? it.path : root.tab.path; if (!Fs.isPinned(p)) root.togglePin(p); }
+        function pin(name: string): void { const it = root.tab.items.find(x => x.name === name), p = it ? it.path : root.tab.path; if (!Fs.isPinned(root.pinTargetOf(p))) root.togglePin(p); }
         function unpin(name: string): void { const it = root.tab.items.find(x => x.name === name); Fs.unpin(it ? it.path : name || root.tab.path); }
         function star(names: string): void { select(names); Fs.setStarred(root.tab.paths(), true); }
         function unstar(names: string): void { select(names); Fs.setStarred(root.tab.paths(), false); }
@@ -1034,7 +1039,7 @@ FocusScope {
         function pinMove(path: string, d: int): void { Fs.movePin(path, d); }
         function pinMenuAt(path: string): void { root.pinMenu(path, 120, 300); }
         function refreshPins(): void { Fs.checkPins(); }
-        function pinClick(path: string): void { const p = Fs.pins.find(x => x.path === path); if (p) sidebar.openPin(p); }
+        function pinClick(path: string): void { const p = Fs.pins.find(x => x.key === path); if (p) sidebar.openPin(p); }
         function recentRemove(name: string): void { const it = root.tab.items.find(x => x.name === name); if (it) Fs.recentRemove([it.path]); }
         function select(names: string): void {
             const want = names.split("|"), s = {};
