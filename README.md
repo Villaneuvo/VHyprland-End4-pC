@@ -117,8 +117,9 @@ straight from end4-pC (it follows the wallpaper), the Material Symbols icon font
   group you can change (also for everything inside a folder), the default app for the type, and photo/song/video/PDF/font
   details.
 - **Places**: Recent (GTK's shared history), Starred, and pinned folders shared with GNOME Files and every GTK file dialog (Ctrl+D pins).
+- **Network**: connect to smb/sftp/ftp/WebDAV/NFS servers (passwords in the keyring), browse them like folders, see them in the sidebar, and pin server folders (shared with GNOME Files).
 
-Not there yet (use **Show in Dolphin** from its menus): drag and drop, split view, network places, tags.
+Not there yet (use **Show in Dolphin** from its menus): drag and drop, split view, tags.
 File operations live in `ops.sh`; `ops.sh selftest` checks them (naming, copy/move, zip, trash and restore).
 
 ## 💤 Hibernate (opt-in)
