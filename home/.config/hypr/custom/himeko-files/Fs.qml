@@ -11,6 +11,7 @@ Singleton {
     readonly property string here: home + "/.config/hypr/custom/himeko-files"
     readonly property string ops: here + "/ops.sh"
     readonly property string trashDir: home + "/.local/share/Trash/files"
+    readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") + "/himeko-files"
 
     signal toast(string text, bool undoable)
     signal failed(string text)
@@ -89,6 +90,7 @@ Singleton {
     property var pins: []                // the folders among them, in order, + exists
     property var starred: ({})           // path -> true
     function isStarred(path) { return starred[path] === true; }
+    function isPinned(path) { return bookmarks.some(b => b.path === path); }
     FileView {
         path: root.bookmarksFile; watchChanges: true; printErrors: false
         onFileChanged: reload()

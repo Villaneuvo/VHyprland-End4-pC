@@ -1,13 +1,17 @@
 import QtQuick
 import QtQuick.Layouts
 
-// Glass sidebar: Places, Devices, a disk meter. Collapses to an icon rail when `rail` is on.
+// Glass sidebar, GNOME Files 47 order: Home, Recent, Starred, Network, Trash; pinned folders (GTK's bookmarks);
+// Devices; a disk meter. Collapses to an icon rail when `rail` is on.
 Rectangle {
     id: root
     required property var tab
     property bool rail: false
     signal open(string path)
     signal openDolphin(string path)
+    signal pinMenu(string path, real x, real y)    // right-click on a pinned folder (x, y in the sidebar)
+    property string renamingPin: ""                 // pinned folder whose label is being edited inline
+    Component.onCompleted: Fs.checkPins()
     property Item activeRow: null
     onActivePlaceChanged: if (activePlace === "") activeRow = null
 
@@ -19,19 +23,17 @@ Rectangle {
 
     readonly property var places: [
         { name: "Home", icon: "home", path: Fs.home },
-        { name: "Desktop", icon: "desktop_windows", path: Fs.dirs.desktop ?? "" },
-        { name: "Documents", icon: "description", path: Fs.dirs.documents ?? "" },
-        { name: "Downloads", icon: "download", path: Fs.dirs.download ?? "" },
-        { name: "Pictures", icon: "image", path: Fs.dirs.pictures ?? "" },
-        { name: "Music", icon: "music_note", path: Fs.dirs.music ?? "" },
-        { name: "Videos", icon: "movie", path: Fs.dirs.videos ?? "" },
+        { name: "Recent", icon: "schedule", path: Fs.recentPath },
+        { name: "Starred", icon: "star", path: Fs.starredPath },
+        { name: "Network", icon: "language", path: "" },
         { name: "Trash", icon: "delete", path: Fs.trashDir, badge: Fs.trashCount }
-    ].filter(p => p.path && (p.path !== Fs.home || p.name === "Home"))
+    ]
 
-    // The place you're in: the deepest place that contains the current folder
+    // The place you're in: the deepest place or pin that contains the current folder
     readonly property string activePlace: {
         let best = "";
-        for (const p of places) if ((tab.path === p.path || tab.path.startsWith(p.path + "/")) && p.path.length > best.length) best = p.path;
+        for (const p of places.concat(Fs.pins))
+            if (p.path && (tab.path === p.path || tab.path.startsWith(p.path + "/")) && p.path.length > best.length) best = p.path;
         return best;
     }
 
@@ -87,13 +89,41 @@ Rectangle {
                     required property var modelData
                     Layout.fillWidth: true
                     icon: modelData.icon; label: modelData.name; badge: modelData.badge ?? 0
-                    active: modelData.path === root.activePlace
+                    active: modelData.path !== "" && modelData.path === root.activePlace
                     rail: root.rail
-                    onClicked: root.open(modelData.path)
+                    onClicked: modelData.path ? root.open(modelData.path) : root.openDolphin("remote:/")
                 }
             }
 
-            SectionLabel { text: "Devices"; visible: !root.rail && Fs.devices.length > 0 }
+            Rectangle {
+                visible: Fs.pins.length > 0
+                Layout.fillWidth: true
+                Layout.leftMargin: 14; Layout.rightMargin: 14; Layout.topMargin: 6; Layout.bottomMargin: 6
+                implicitHeight: 1
+                color: Theme.outlineVariant
+            }
+            Repeater {
+                model: Fs.pins
+                delegate: PlaceRow {
+                    id: pinRow
+                    required property var modelData
+                    Layout.fillWidth: true
+                    icon: Fs.pinIcon(modelData.path, Fs.dirs); label: modelData.name; rail: root.rail
+                    dim: !modelData.exists
+                    renaming: root.renamingPin === modelData.path
+                    active: modelData.path === root.activePlace
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onClicked: (m) => {
+                        if (m.button === Qt.RightButton) { const p = mapToItem(root, m.x, m.y); root.pinMenu(modelData.path, p.x, p.y); }
+                        else if (modelData.exists) root.open(modelData.path);
+                        else Fs.toast("This folder isn't available", false);
+                    }
+                    onRenamed: (name) => { root.renamingPin = ""; Fs.renamePin(modelData.path, name === modelData.path.slice(modelData.path.lastIndexOf("/") + 1) ? "" : name); }
+                    onRenameCancelled: root.renamingPin = ""
+                }
+            }
+
+            SectionLabel { text: "Devices"; visible: !root.rail && Fs.devices.length > 0; Layout.topMargin: 14 }
             Repeater {
                 model: Fs.devices
                 delegate: PlaceRow {
@@ -105,11 +135,6 @@ Rectangle {
                     onTrailingClicked: Fs.eject(modelData.dev)
                     onClicked: modelData.mount ? root.open(modelData.mount) : Fs.mount(modelData.dev, () => {})
                 }
-            }
-            PlaceRow {
-                Layout.fillWidth: true
-                icon: "language"; label: "Network"; rail: root.rail
-                onClicked: root.openDolphin("remote:/")
             }
 
             Item { implicitHeight: 12 }
@@ -154,7 +179,12 @@ Rectangle {
         property bool active: false
         property bool rail: false
         property string trailingIcon: ""
+        property bool dim: false            // a pinned folder that isn't there (unmounted drive)
+        property bool renaming: false
         signal trailingClicked()
+        signal renamed(string name)
+        signal renameCancelled()
+        opacity: dim ? 0.45 : 1
         implicitHeight: Theme.target
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
@@ -179,10 +209,21 @@ Rectangle {
                     Text { anchors.centerIn: parent; text: row.badge > 99 ? "99" : row.badge; color: Theme.inkPrimary; font.family: Theme.font; font.pixelSize: 10; font.weight: 700 }
                 }
             }
+            Loader {
+                active: row.renaming && !row.rail
+                visible: active
+                Layout.fillWidth: true
+                sourceComponent: RenameField {
+                    text: row.label; isDir: true
+                    onAccepted: (name) => row.renamed(name)
+                    onCancelled: row.renameCancelled()
+                }
+            }
             Text {
-                visible: !row.rail
+                visible: !row.rail && !row.renaming
                 Layout.fillWidth: true
                 text: row.label
+                textFormat: Text.PlainText   // pin labels and folder names are file-derived
                 elide: Text.ElideRight
                 color: row.active ? Theme.inkPrimaryContainer : Theme.text
                 font.family: Theme.font; font.pixelSize: 14; font.weight: row.active ? 600 : 450

@@ -145,6 +145,30 @@ FocusScope {
         menuQuick = quick; menuEntries = entries; menuX = x; menuY = y; menuOpen = true;
         menuLoader.item?.forceActiveFocus();
     }
+    // ---- pinned folders (GTK's bookmarks) ----
+    function togglePin(path) {
+        if (Fs.isPinned(path)) return Fs.unpin(path);
+        Fs.pin(path);
+        Fs.toast("Pinned “" + (path === "/" ? "/" : path.slice(path.lastIndexOf("/") + 1)) + "”", false);
+    }
+    // Ctrl+D: the selected folder, else the folder you're in
+    function pinTarget() {
+        const sel = tab.selectedItems;
+        if (sel.length === 1) return sel[0].isDir ? sel[0].path : "";
+        return sel.length || tab.virtual || tab.inTrash ? "" : tab.path;
+    }
+    function pinMenu(path, x, y) {
+        const i = Fs.pins.findIndex(p => p.path === path), pin = Fs.pins[i];
+        showMenu(x, y, [], [
+            { icon: "tab", label: "Open in New Tab", disabled: !pin || !pin.exists, action: () => newTab(path, false) },
+            { icon: "edit", label: "Rename…", action: () => sidebar.renamingPin = path },
+            { separator: true },
+            { icon: "arrow_upward", label: "Move Up", disabled: i <= 0, action: () => Fs.movePin(path, -1) },
+            { icon: "arrow_downward", label: "Move Down", disabled: i < 0 || i >= Fs.pins.length - 1, action: () => Fs.movePin(path, 1) },
+            { separator: true },
+            { icon: "keep_off", label: "Unpin", action: () => Fs.unpin(path) }
+        ]);
+    }
     function itemMenu(item, x, y) {
         const sel = tab.selectedItems, one = sel.length === 1 ? sel[0] : null;
         const kind = one ? Fs.kindOf(one) : "";
@@ -166,6 +190,8 @@ FocusScope {
             ? apps.map(a => ({ label: a.name + (a.isDefault ? "  ·  default" : ""), appIcon: Quickshell.iconPath(a.icon, true), action: () => Fs.launchApp(a.id, one.path) }))
             : [{ label: "No apps for this file", disabled: true }])) });
         if (one && one.isDir) e.push({ icon: "tab", label: "Open in new tab", action: () => newTab(one.path, false) });
+        if (one && one.isDir) e.push(Fs.isPinned(one.path) ? { icon: "keep_off", label: "Unpin from Sidebar", hint: "Ctrl+D", action: () => togglePin(one.path) }
+                                                           : { icon: "keep", label: "Pin to Sidebar", hint: "Ctrl+D", action: () => togglePin(one.path) });
         if (one && tab.virtual) e.push({ icon: "folder_open", label: "Open Item Location", action: () => openLocation(one) });
         if (tab.place === "recent") e.push({ icon: "history_toggle_off", label: "Remove from Recent", action: () => tab.paths().forEach(p => Fs.recentRemove(p)) });
         if (kind === "image") e.push({ icon: "wallpaper", label: "Set as wallpaper", action: () => Fs.setWallpaper(one.path) });
@@ -199,6 +225,8 @@ FocusScope {
             { separator: true },
             { icon: "terminal", label: "Open terminal here", action: () => Fs.terminal(tab.path) },
             { icon: "folder_managed", label: "Open in Dolphin", action: () => Fs.openDolphin(tab.path) },
+            Fs.isPinned(tab.path) ? { icon: "keep_off", label: "Unpin from Sidebar", hint: "Ctrl+D", action: () => togglePin(tab.path) }
+                                  : { icon: "keep", label: "Pin to Sidebar", hint: "Ctrl+D", action: () => togglePin(tab.path) },
             { icon: "info", label: "Properties", action: () => openProps([folderItem()]) }
         ]);
     }
@@ -255,6 +283,7 @@ FocusScope {
         else if (ctrl && k === Qt.Key_X && tab.selectedCount && !tab.inTrash) Fs.setClip("move", tab.paths());
         else if (ctrl && k === Qt.Key_V && !tab.inTrash && !tab.virtual) Fs.paste(tab.path);
         else if (ctrl && k === Qt.Key_Z) Fs.undo();
+        else if (ctrl && k === Qt.Key_D) { const p = pinTarget(); if (p) togglePin(p); }
         else if (ctrl && shift && k === Qt.Key_N && !tab.virtual) Fs.newFolder(tab.path);
         else if (ctrl && k === Qt.Key_1) tab.viewMode = "icons";
         else if (ctrl && k === Qt.Key_2) tab.viewMode = "details";
@@ -307,11 +336,13 @@ FocusScope {
         spacing: 10
 
         Sidebar {
+            id: sidebar
             Layout.fillHeight: true
             tab: root.tab
             rail: root.rail
             onOpen: (p) => { root.tab.go(p); view.forceActiveFocus(); }
             onOpenDolphin: (p) => Fs.openDolphin(p)
+            onPinMenu: (path, x, y) => { const p = sidebar.mapToItem(root, x, y); root.pinMenu(path, p.x, p.y); }
         }
 
         Rectangle {
@@ -887,6 +918,13 @@ FocusScope {
         function go(path: string): void { root.goTo(path); }
         function view(mode: string): void { root.tab.viewMode = mode; }
         function open(names: string): void { select(names); root.openSelection(); }
+        function pin(name: string): void { const it = root.tab.items.find(x => x.name === name), p = it ? it.path : root.tab.path; if (!Fs.isPinned(p)) root.togglePin(p); }
+        function unpin(name: string): void { const it = root.tab.items.find(x => x.name === name); Fs.unpin(it ? it.path : name || root.tab.path); }
+        function pinRename(path: string, label: string): void { Fs.renamePin(path, label); }
+        function pinRenaming(path: string): void { sidebar.renamingPin = path; }
+        function pinMove(path: string, d: int): void { Fs.movePin(path, d); }
+        function pinMenuAt(path: string): void { root.pinMenu(path, 120, 300); }
+        function refreshPins(): void { Fs.checkPins(); }
         function recentRemove(name: string): void { const it = root.tab.items.find(x => x.name === name); if (it) Fs.recentRemove(it.path); }
         function select(names: string): void {
             const want = names.split("|"), s = {};

@@ -27,13 +27,13 @@ QtObject {
     // Recent and Starred aren't folders: places.py lists them
     readonly property string place: path === Fs.recentPath ? "recent" : path === Fs.starredPath ? "starred" : ""
     readonly property bool virtual: place !== ""
-    readonly property bool ready: virtual ? loadedPath === path : model.status === FolderListModel.Ready
+    readonly property bool ready: virtual ? loadedPath === path : listPath !== "" && model.status === FolderListModel.Ready
     readonly property string name: place === "recent" ? "Recent" : place === "starred" ? "Starred"
         : path === "/" ? "/" : path === Fs.home ? "Home" : path.slice(path.lastIndexOf("/") + 1)
     readonly property bool inTrash: path === Fs.trashDir || path.startsWith(Fs.trashDir + "/")
 
     property FolderListModel model: FolderListModel {
-        folder: tab.virtual ? "" : "file://" + tab.path
+        folder: tab.virtual || !tab.listPath ? "" : Fs.uri(tab.listPath)
         showDirsFirst: true
         showDotAndDotDot: false
         showHidden: tab.showHidden
@@ -41,13 +41,24 @@ QtObject {
         caseSensitive: false
     }
 
+    // Qt's FolderListModel re-reads the folder path as a URL, so "#" or "?" in it cuts the path short: such a
+    // folder is listed through a symlink in XDG_RUNTIME_DIR, and its items get their real paths back
+    property string listPath: ""
+    function updateListPath() {
+        if (virtual || !/[#?]/.test(path)) return listPath = path;
+        listPath = "";
+        const asked = path, link = Fs.runtimeDir + "/dir-" + Qt.md5(path);
+        Fs.run(["bash", "-c", "mkdir -p \"${2%/*}\" && ln -sfn -- \"$1\" \"$2\"", "_", path, link], () => { if (tab.path === asked) tab.listPath = link; });
+    }
+
     property var all: []
     function reload() {
         if (virtual) return reloadPlace();
-        const m = tab.model, list = [];
+        if (!listPath) return;
+        const m = tab.model, list = [], real = (p) => listPath === path ? p : path + p.slice(listPath.length);
         for (let i = 0; i < m.count; i++) {
             list.push({
-                name: m.get(i, "fileName"), path: m.get(i, "filePath"), isDir: m.get(i, "fileIsDir"),
+                name: m.get(i, "fileName"), path: real(m.get(i, "filePath")), isDir: m.get(i, "fileIsDir"),
                 size: m.get(i, "fileSize"), modified: m.get(i, "fileModified"), suffix: m.get(i, "fileSuffix")
             });
         }
@@ -80,7 +91,7 @@ QtObject {
         if (place === "recent") Fs.recentList(done);
         else Fs.starredList(done);
     }
-    onPathChanged: if (virtual) reloadTimer.restart()
+    onPathChanged: { updateListPath(); if (virtual) reloadTimer.restart(); }
     // Changes from elsewhere: GTK's history (only while Recent is shown), stars, and our own operations (they toast)
     readonly property FileView recentWatch: FileView {
         path: tab.place === "recent" ? Fs.recentFile : ""
@@ -158,5 +169,5 @@ QtObject {
     function selectPath(p) { const s = {}; s[p] = true; selection = s; current = p; anchor = p; }
     function paths() { return selectedItems.map(it => it.path); }
 
-    Component.onCompleted: { if (path === Fs.recentPath) { folderSort = [sortKey, sortDesc]; sortKey = "used"; sortDesc = true; } reloadTimer.restart(); }
+    Component.onCompleted: { updateListPath(); if (path === Fs.recentPath) { folderSort = [sortKey, sortDesc]; sortKey = "used"; sortDesc = true; } reloadTimer.restart(); }
 }
