@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # File operations for Himeko Files. Never overwrites: clashing names get " (2)", " (3)"...
 # Prints the paths/URIs it created so the app can offer Undo.
-#   ops.sh paste copy|move DEST SRC...   -> one created path per line
+#   ops.sh paste copy|move DEST SRC...   -> one line per SRC: the created path, empty when skipped
 #   ops.sh trash PATH...                 -> one trash:/// URI per line (for `ops.sh restore`)
 #   ops.sh restore URI...
 #   ops.sh mkdir DIR NAME                -> created path
@@ -70,14 +70,18 @@ recent|starred|bookmarks) exec python3 -I "$(dirname -- "$0")/places.py" "$cmd" 
 placesmoved) exec python3 -I "$(dirname -- "$0")/places.py" moved "$@" ;;
 paste)
     mode=$1 dest=$2; shift 2
+    # The app pairs line N with SRC N (undo, stars, pins), so a skipped item still prints its (empty) line
     for src in "$@"; do
-        src=${src%/}
-        [ -e "$src" ] || [ -L "$src" ] || continue
+        src=${src%/} target=
+        if ! [ -e "$src" ] && ! [ -L "$src" ]; then :
         # Moving into the folder it is already in, or a folder into itself: nothing to do
-        if [ "$mode" = move ] && [ "$(dirname -- "$src")" = "$dest" ]; then continue; fi
-        case "$dest/" in "$src"/*) echo "skip: can't put a folder inside itself: $src" >&2; continue ;; esac
-        target=$(unique "$dest" "$(basename -- "$src")")
-        if [ "$mode" = move ]; then mv -n -- "$src" "$target"; else cp -a -- "$src" "$target"; fi && printf '%s\n' "$target"
+        elif [ "$mode" = move ] && [ "$(dirname -- "$src")" = "$dest" ]; then :
+        elif case "$dest/" in "$src"/*) true ;; *) false ;; esac; then echo "skip: can't put a folder inside itself: $src" >&2
+        else
+            target=$(unique "$dest" "$(basename -- "$src")")
+            if [ "$mode" = move ]; then mv -n -- "$src" "$target"; else cp -a -- "$src" "$target"; fi || target=
+        fi
+        printf '%s\n' "$target"
     done ;;
 trash)
     export LC_ALL=C # sort and comm must agree on the order
@@ -462,6 +466,18 @@ import os; os.replace(sys.argv[1]+'.tmp', sys.argv[1])" "$t/recent.xbel"; done )
     for i in $(seq 8); do "$me" starred add "$t/pl/p$i" & done; wait
     check "starred: parallel adds all land" "$(grep -c '/pl/p[0-9]$' "$HF_STARRED")" "8"
     unset HF_RECENT HF_STARRED
+    # ---- review fixes: a skipped item keeps its place in paste's output; batch moved / recent remove ----
+    mkdir -p "$t/pm/d" "$t/pm/s"; : >"$t/pm/d/x"; : >"$t/pm/s/y"
+    out=$("$me" paste move "$t/pm/d" "$t/pm/d/x" "$t/pm/s/y"; echo .)
+    check "paste: one line per source, empty when skipped" "$out" $'\n'"$t/pm/d/y"$'\n.'
+    export HF_RECENT=$t/pm.xbel HF_STARRED=$t/state/pm XDG_CONFIG_HOME=$t/pmcfg
+    : >"$t/pm/a"; : >"$t/pm/b"; "$me" starred add "$t/pm/a" "$t/pm/b"; "$me" recent add "$t/pm/a"; "$me" recent add "$t/pm/b"
+    mv "$t/pm/a" "$t/pm/a2"; mv "$t/pm/b" "$t/pm/b2"
+    "$me" placesmoved "$t/pm/a" "$t/pm/a2" "$t/pm/b" "$t/pm/b2"
+    check "moved: several pairs in one call" "$(sed "s|$t/pm/||" "$HF_STARRED" | tr '\n' ' ')" "a2 b2 "
+    "$me" recent remove "$t/pm/a2" "$t/pm/b2"
+    check "recent remove: several paths" "$("$me" recent list | grep -c '/pm/')" "0"
+    unset HF_RECENT HF_STARRED XDG_CONFIG_HOME
     exit $fail ;;
 *) echo "usage: see the header of $0" >&2; exit 2 ;;
 esac

@@ -41,11 +41,11 @@ QtObject {
         caseSensitive: false
     }
 
-    // Qt's FolderListModel re-reads the folder path as a URL, so "#" or "?" in it cuts the path short: such a
+    // Qt's FolderListModel re-reads the folder path as a URL ("#"/"?" cut it short, "%20" turns into " "): such a
     // folder is listed through a symlink in XDG_RUNTIME_DIR, and its items get their real paths back
     property string listPath: ""
     function updateListPath() {
-        if (virtual || !/[#?]/.test(path)) return listPath = path;
+        if (virtual || !/[#?]|%[0-9A-Fa-f]{2}/.test(path)) return listPath = path;
         listPath = "";
         const asked = path, link = Fs.runtimeDir + "/dir-" + Qt.md5(path);
         Fs.run(["bash", "-c", "mkdir -p \"${2%/*}\" && ln -sfn -- \"$1\" \"$2\"", "_", path, link], () => { if (tab.path === asked) tab.listPath = link; });

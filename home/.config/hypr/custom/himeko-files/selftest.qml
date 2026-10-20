@@ -16,6 +16,8 @@ ShellRoot {
     Component.onCompleted: { try { run(); } catch (e) { failures++; console.log("FAIL exception: " + e); } finally { console.log("selftest: " + failures + " failures"); done.start(); } }
     function run() {
         // ---- places rules ----
+        check("pastePairs: skipped source keeps its place", Fs.pastePairs("\n/d/y\n", ["/d/x", "/s/y"]), [["/s/y", "/d/y"]]);
+        check("pastePairs: all moved", Fs.pastePairs("/d/a\n/d/b (2)\n", ["/s/a", "/t/b"]), [["/s/a", "/d/a"], ["/t/b", "/d/b (2)"]]);
         const bm = Fs.parseBookmarks("file:///home/u/Documents\nsftp://host/srv Server\nfile:///home/u/Proj%20%231%20%25%20%E2%9C%A8 Projects ✨\n\n");
         check("bookmarks: count", bm.length, 3);
         check("bookmarks: plain", [bm[0].path, bm[0].label, bm[0].name], ["/home/u/Documents", "", "Documents"]);

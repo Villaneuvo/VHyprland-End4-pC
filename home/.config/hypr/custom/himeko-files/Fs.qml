@@ -91,14 +91,16 @@ Singleton {
     property var starred: ({})           // path -> true
     function isStarred(path) { return starred[path] === true; }
     function isPinned(path) { return bookmarks.some(b => b.path === path); }
+    // A FileView can't watch a file whose folder doesn't exist yet (the first star creates ~/.local/state/himeko-files)
+    property bool placesWatching: false
     FileView {
-        path: root.bookmarksFile; watchChanges: true; printErrors: false
+        path: root.placesWatching ? root.bookmarksFile : ""; watchChanges: true; printErrors: false
         onFileChanged: reload()
         onLoaded: root.bookmarks = root.parseBookmarks(text())
         onLoadFailed: root.bookmarks = []
     }
     FileView {
-        path: root.starredFile; watchChanges: true; printErrors: false
+        path: root.placesWatching ? root.starredFile : ""; watchChanges: true; printErrors: false
         onFileChanged: reload()
         onLoaded: { const m = {}; for (const p of root.lines(text())) m[p] = true; root.starred = m; }
         onLoadFailed: root.starred = {}
@@ -143,13 +145,15 @@ Singleton {
     function recentList(cb) { run([ops, "recent", "list"], (text) => cb(placeItems(text))); }
     function starredList(cb) { run([ops, "starred", "list"], (text) => cb(placeItems(text))); }
     function recentAdd(path) { run([ops, "recent", "add", path], null); }
-    function recentRemove(path, cb) { places(["recent", "remove", path], cb); }
+    function recentRemove(paths, cb) { places(["recent", "remove"].concat(paths), cb); }
     function setStarred(paths, on) { places(["starred", on ? "add" : "remove"].concat(paths)); }
     function pin(path) { places(["bookmarks", "pin", path]); }
     function unpin(path) { places(["bookmarks", "unpin", path]); }
     function renamePin(path, label) { places(["bookmarks", "rename", path, label]); }
     function movePin(path, d) { places(["bookmarks", "move", path, String(d)]); }
-    function placesMoved(from, to) { run([ops, "placesmoved", from, to], null); }
+    function placesMoved(pairs) { if (pairs.length) run([ops, "placesmoved"].concat(...pairs), null); }   // [[from, to]]
+    // ops.sh paste prints one line per source (empty = skipped): [[src, created]] for the ones that happened
+    function pastePairs(text, paths) { return text.split("\n").slice(0, paths.length).map((t, i) => [paths[i], t]).filter(p => p[1]); }
 
     function mount(dev, cb) { run(["udisksctl", "mount", "-b", dev], (t, code, e) => { root.refreshPlaces(); if (code) root.failed(e.trim()); else if (cb) cb(); }); }
     function eject(dev) { run(["bash", "-c", "udisksctl unmount -b \"$1\" && udisksctl power-off -b \"$1\"", "_", dev], (t, code, e) => { root.refreshPlaces(); if (code) root.failed(e.trim()); else root.toast("Safe to remove", false); }); }
@@ -393,10 +397,10 @@ Singleton {
     function doPaste(mode, dest, paths) {
         toast((mode === "move" ? "Moving " : "Copying ") + paths.length + (paths.length === 1 ? " item…" : " items…"), false);
         run([ops, "paste", mode, dest].concat(paths), (text, code, err) => {
-            const made = lines(text);
+            const pairs = pastePairs(text, paths), made = pairs.map(p => p[1]);
             if (mode === "move" && made.length) {
-                undoAction = { kind: "move", pairs: made.map((t, i) => [t, paths[i]]) };
-                made.forEach((t, i) => placesMoved(paths[i], t));   // stars, pins and recent entries follow
+                undoAction = { kind: "move", pairs: pairs.map(p => [p[1], p[0]]) };
+                placesMoved(pairs);   // stars, pins and recent entries follow
                 clip = { mode: "", paths: [] };
             } else if (made.length) {
                 undoAction = { kind: "copy", paths: made };
@@ -431,7 +435,7 @@ Singleton {
             run(["test", "-e", path], (t2, stillThere) => {
                 if (stillThere === 0) return failed("“" + name + "” already exists");
                 undoAction = { kind: "rename", from: target, to: path };
-                placesMoved(path, target);
+                placesMoved([[path, target]]);
                 if (cb) cb(target);
             });
         });
@@ -467,8 +471,15 @@ Singleton {
         if (!a) return;
         undoAction = null;
         if (a.kind === "trash") run([ops, "restore"].concat(a.uris), (t, c, e) => c ? failed(e.trim()) : toast("Restored", false));
-        else if (a.kind === "rename") run(["mv", "-n", "-T", "--", a.from, a.to], (t, c, e) => { if (c) return failed(e.trim()); placesMoved(a.from, a.to); toast("Rename undone", false); });
-        else if (a.kind === "move") a.pairs.forEach(p => run(["mv", "-n", "-T", "--", p[0], p[1]], (t, c, e) => { if (c) return failed(e.trim()); placesMoved(p[0], p[1]); }));
+        else if (a.kind === "rename") run(["mv", "-n", "-T", "--", a.from, a.to], (t, c, e) => { if (c) return failed(e.trim()); placesMoved([[a.from, a.to]]); toast("Rename undone", false); });
+        else if (a.kind === "move") {
+            const back = [];
+            let left = a.pairs.length;
+            a.pairs.forEach(p => run(["mv", "-n", "-T", "--", p[0], p[1]], (t, c, e) => {
+                if (c) failed(e.trim()); else back.push(p);
+                if (--left === 0) placesMoved(back);   // one update for the whole undo
+            }));
+        }
         else if (a.kind === "copy") run([ops, "trash"].concat(a.paths), (t, c, e) => c ? failed(e.trim()) : toast("Undone", false));
     }
 
@@ -529,5 +540,6 @@ Singleton {
     // DesktopEntries scans on first use and answers null until then: start it now
     Component.onCompleted: {
         run([ops, "thumbexts"], (text) => { const m = {}; for (const e of lines(text)) m[e] = true; root.thumbExts = m; });
+        run(["mkdir", "-p", "--", parentOf(bookmarksFile), parentOf(starredFile)], () => root.placesWatching = true);
         refreshPlaces(); void DesktopEntries.applications.values.length; }
 }

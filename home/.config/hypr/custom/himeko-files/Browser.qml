@@ -195,7 +195,7 @@ FocusScope {
         const starredAll = sel.every(it => Fs.isStarred(it.path));
         e.push({ icon: "star", label: starredAll ? "Unstar" : "Star", action: () => Fs.setStarred(tab.paths(), !starredAll) });
         if (one && tab.virtual) e.push({ icon: "folder_open", label: "Open Item Location", action: () => openLocation(one) });
-        if (tab.place === "recent") e.push({ icon: "history_toggle_off", label: "Remove from Recent", action: () => tab.paths().forEach(p => Fs.recentRemove(p)) });
+        if (tab.place === "recent") e.push({ icon: "history_toggle_off", label: "Remove from Recent", action: () => Fs.recentRemove(tab.paths()) });
         if (kind === "image") e.push({ icon: "wallpaper", label: "Set as wallpaper", action: () => Fs.setWallpaper(one.path) });
         if (one && Fs.isArchive(one)) e.push({ icon: "unarchive", label: "Extract here", action: () => Fs.extract(one.path) });
         else if (!tab.virtual) e.push({ icon: "folder_zip", label: "Compress to ZIP", action: () => Fs.compress(tab.path, tab.paths()) });
@@ -796,7 +796,7 @@ FocusScope {
                         Shape { anchors.fill: parent; kind: "burst"; color: toast.error ? Theme.error : Theme.secondaryContainer }
                         Icon { anchors.centerIn: parent; name: toast.error ? "priority_high" : "check"; size: 17; color: toast.error ? Theme.surface : Theme.inkSecondaryContainer }
                     }
-                    Text { text: toast.text; color: Theme.text; font.family: Theme.font; font.pixelSize: 14; Layout.maximumWidth: 520; elide: Text.ElideRight }
+                    Text { text: toast.text; textFormat: Text.PlainText; color: Theme.text; font.family: Theme.font; font.pixelSize: 14; Layout.maximumWidth: 520; elide: Text.ElideRight }   // toasts carry file names
                     IconButton {
                         visible: toast.undoable
                         implicitHeight: 40
@@ -929,7 +929,8 @@ FocusScope {
         function pinMove(path: string, d: int): void { Fs.movePin(path, d); }
         function pinMenuAt(path: string): void { root.pinMenu(path, 120, 300); }
         function refreshPins(): void { Fs.checkPins(); }
-        function recentRemove(name: string): void { const it = root.tab.items.find(x => x.name === name); if (it) Fs.recentRemove(it.path); }
+        function pinClick(path: string): void { const p = Fs.pins.find(x => x.path === path); if (p) sidebar.openPin(p); }
+        function recentRemove(name: string): void { const it = root.tab.items.find(x => x.name === name); if (it) Fs.recentRemove([it.path]); }
         function select(names: string): void {
             const want = names.split("|"), s = {};
             root.tab.items.forEach(it => { if (want.indexOf(it.name) >= 0) s[it.path] = true; });

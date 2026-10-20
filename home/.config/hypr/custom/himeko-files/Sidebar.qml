@@ -12,6 +12,14 @@ Rectangle {
     signal pinMenu(string path, real x, real y)    // right-click on a pinned folder (x, y in the sidebar)
     property string renamingPin: ""                 // pinned folder whose label is being edited inline
     Component.onCompleted: Fs.checkPins()
+    // Asks the disk, not the last check: a drive can come back without the device list changing (LUKS, network)
+    function openPin(pin) {
+        Fs.run(["test", "-d", pin.path], (t, missing) => {
+            if (missing) Fs.toast("This folder isn't available", false);
+            else root.open(pin.path);
+            if (!missing !== pin.exists) Fs.checkPins();
+        });
+    }
     property Item activeRow: null
     onActivePlaceChanged: if (activePlace === "") activeRow = null
 
@@ -115,8 +123,7 @@ Rectangle {
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     onClicked: (m) => {
                         if (m.button === Qt.RightButton) { const p = mapToItem(root, m.x, m.y); root.pinMenu(modelData.path, p.x, p.y); }
-                        else if (modelData.exists) root.open(modelData.path);
-                        else Fs.toast("This folder isn't available", false);
+                        else root.openPin(modelData);
                     }
                     onRenamed: (name) => { root.renamingPin = ""; Fs.renamePin(modelData.path, name === modelData.path.slice(modelData.path.lastIndexOf("/") + 1) ? "" : name); }
                     onRenameCancelled: root.renamingPin = ""

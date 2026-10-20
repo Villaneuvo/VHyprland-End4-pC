@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Recent files, stars and pinned folders for Himeko Files (called by ops.sh; TAB-separated output).
   recent list [MAX]            -> path isDir size mtime used, newest first (GTK's recently-used.xbel)
-  recent add|remove PATH
+  recent add PATH | remove PATH...
   starred list                 -> path isDir size mtime (existing only)
   starred add|remove PATH...
   bookmarks pin PATH [LABEL] | unpin PATH | rename PATH LABEL | move PATH -1|1   (GTK's bookmarks file)
-  moved OLD NEW                -> stars, pins and recent entries follow a rename/move
+  moved OLD NEW [OLD NEW...]   -> stars, pins and recent entries follow renames/moves
 Env: HF_RECENT, HF_STARRED, XDG_CONFIG_HOME. Writes: temp file next to the real target + rename, mode kept."""
 import fcntl
 import os
@@ -138,13 +138,17 @@ def recent_add(path):
     save_recent(bf)
 
 
-def recent_remove(path):
+def recent_remove(paths):
     bf = load_recent()
-    try:
-        bf.remove_item(uri_of(path))
-    except GLib.Error:
-        return
-    save_recent(bf)
+    changed = False
+    for path in paths:
+        try:
+            bf.remove_item(uri_of(path))
+            changed = True
+        except GLib.Error:
+            pass
+    if changed:
+        save_recent(bf)
 
 
 # ---- starred (ours: one absolute path per line) ----
@@ -226,27 +230,36 @@ def bookmarks(op, args):
 
 # ---- a rename or move done in the app ----
 
-def moved(old, new):
-    old, new = os.path.abspath(old), os.path.abspath(new)
+def moved(pairs):
+    pairs = [(os.path.abspath(old), os.path.abspath(new)) for old, new in pairs]
+
+    def follow(path):
+        """PATH after the moves, or None when none of them touches it."""
+        for old, new in pairs:
+            rest = under(path, old)
+            if rest is not None:
+                return new + rest
+        return None
+
     stars = load_starred()
-    moved_stars = [new + rest if (rest := under(p, old)) is not None else p for p in stars]
+    moved_stars = [follow(p) or p for p in stars]
     if moved_stars != stars:
         save_starred(moved_stars)
     lines = load_bookmarks()
     moved_lines = []
     for line in lines:
         path = line_path(line)
-        rest = under(path, old) if path else None
-        moved_lines.append(line if rest is None else pin_line(new + rest, line.partition(" ")[2]))
+        to = follow(path) if path else None
+        moved_lines.append(line if to is None else pin_line(to, line.partition(" ")[2]))
     if moved_lines != lines:
         save_bookmarks(moved_lines)
     bf = load_recent()
     changed = False
     for uri in bf.get_uris():
         path = path_of(uri)
-        rest = under(path, old) if path else None
-        if rest is not None:
-            bf.move_item(uri, uri_of(new + rest))
+        to = follow(path) if path else None
+        if to is not None:
+            bf.move_item(uri, uri_of(to))
             changed = True
     if changed:
         save_recent(bf)
@@ -267,16 +280,18 @@ def main(argv):
         fcntl.flock(lock, fcntl.LOCK_EX)
     if what == "recent" and op == "list":
         lines(recent_list(int(args[1]) if len(args) > 1 else 300))
-    elif what == "recent" and op in ("add", "remove") and len(args) == 2:
-        (recent_add if op == "add" else recent_remove)(args[1])
+    elif what == "recent" and op == "add" and len(args) == 2:
+        recent_add(args[1])
+    elif what == "recent" and op == "remove" and len(args) > 1:
+        recent_remove(args[1:])
     elif what == "starred" and op == "list":
         lines(filter(None, map(row, load_starred())))
     elif what == "starred" and op in ("add", "remove") and len(args) > 1:
         (starred_add if op == "add" else starred_remove)(args[1:])
     elif what == "bookmarks" and op in ("pin", "unpin", "rename", "move"):
         bookmarks(op, args[1:])
-    elif what == "moved" and len(args) == 2:
-        moved(*args)
+    elif what == "moved" and args and len(args) % 2 == 0:
+        moved(list(zip(args[::2], args[1::2])))
     else:
         fail(f"bad arguments: {' '.join(argv)}")
 
