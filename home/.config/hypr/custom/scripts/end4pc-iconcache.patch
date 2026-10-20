@@ -1,0 +1,32 @@
+diff --git a/services/AppSearch.qml b/services/AppSearch.qml
+index 2b9a197..e5f66e9 100644
+--- a/services/AppSearch.qml
++++ b/services/AppSearch.qml
+@@ -1,5 +1,6 @@
+ pragma Singleton
+ 
++import QtQuick
+ import qs.modules.common
+ import qs.modules.common.functions
+ import Quickshell
+@@ -95,7 +96,20 @@ Singleton {
+         return str.toLowerCase().replace(/_/g, "-");
+     }
+ 
++    // Icons per window class, computed once per session: the bar, dock and overview ask again on every window event,
++    // and a class without a desktop entry (Chrome --app windows) falls through to fuzzy search (~50 ms each), thousands
++    // of times a second. Never cleared: DesktopEntries signals valuesChanged constantly while rescanning (even with a
++    // transiently different list), and every clear brought the 5-second freezes back. A newly installed app has a new
++    // class, so it is still looked up; only a class first seen without its desktop entry keeps the fallback until relogin.
++    property var _iconCache: ({})
+     function guessIcon(str) {
++        const key = str ?? "";
++        if (key in root._iconCache) return root._iconCache[key];
++        const icon = root._guessIconUncached(str);
++        root._iconCache[key] = icon;
++        return icon;
++    }
++    function _guessIconUncached(str) {
+         if (!str || str.length == 0) return "image-missing";
+ 
+         // Quickshell's desktop entry lookup

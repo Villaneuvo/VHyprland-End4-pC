@@ -26,4 +26,12 @@ p="$(dirname "$0")/end4pc-notifications.patch"
 patch -d "$E4" -p1 --dry-run -R -s -f < "$p" >/dev/null 2>&1 ||
     patch -d "$E4" -p1 -N -s -f --no-backup-if-mismatch -r - < "$p" ||
     echo "end4pc-patches: notifications patch no longer applies (end4-pC changed upstream)" >&2
+
+# Window icons: AppSearch.guessIcon has no cache, and bar/dock bindings re-ask it on every window event; a class
+# without a desktop entry (Chrome --app windows) runs a full fuzzy search each time, thousands of times a second,
+# which pegged the shell at 100% CPU and made everything lag. Cache per class. Skipped if already applied.
+p="$(dirname "$0")/end4pc-iconcache.patch"
+patch -d "$E4" -p1 --dry-run -R -s -f < "$p" >/dev/null 2>&1 ||
+    patch -d "$E4" -p1 -N -s -f --no-backup-if-mismatch -r - < "$p" ||
+    echo "end4pc-patches: icon cache patch no longer applies (end4-pC changed upstream)" >&2
 exit 0
