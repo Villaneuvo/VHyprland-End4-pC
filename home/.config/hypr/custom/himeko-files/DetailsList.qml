@@ -18,7 +18,7 @@ ListView {
         { key: "name", label: "Name", w: 0 },
         { key: "size", label: "Size", w: 110 },
         { key: "modified", label: "Modified", w: 170 },
-        { key: "kind", label: "Kind", w: 130 }
+        tab.virtual ? { key: "location", label: "Location", w: 200 } : { key: "kind", label: "Kind", w: 130 }
     ]
     readonly property var rows: tab.items
     // A rebuilt listing (a file added, the sort changed) keeps its scroll position; another folder starts at the top.
@@ -181,14 +181,15 @@ ListView {
                 model: [
                     row.modelData.isDir ? Fs.countLabel(root.tab.countOf(row.modelData.path)) : Fs.size(row.modelData.size),
                     Fs.date(row.modelData.modified),
-                    Fs.labelOf(row.kind, row.modelData.suffix)
+                    root.tab.virtual ? Fs.parentOf(row.modelData.path).replace(Fs.home, "~") : Fs.labelOf(row.kind, row.modelData.suffix)
                 ]
                 delegate: Text {
                     required property var modelData
                     required property int index
                     Layout.preferredWidth: root.cols[index + 1].w
                     text: modelData
-                    elide: Text.ElideRight
+                    textFormat: Text.PlainText   // Location is a path
+                    elide: Text.ElideMiddle
                     color: row.selected ? Theme.inkPrimaryContainer : Theme.textDim
                     font.family: Theme.font; font.pixelSize: 13
                 }

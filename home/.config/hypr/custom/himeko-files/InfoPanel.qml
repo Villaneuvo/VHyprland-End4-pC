@@ -101,7 +101,7 @@ Rectangle {
             Meta { label: "Created"; visible: !!root.details.created }
             MetaValue { text: root.details.created ?? ""; visible: !!root.details.created }
             Meta { label: "Location" }
-            MetaValue { text: root.tab.path.replace(Fs.home, "~") }
+            MetaValue { text: (root.tab.virtual && root.item && !root.item.isCurrent ? Fs.parentOf(root.item.path) : root.tab.path).replace(Fs.home, "~") }
         }
 
         Item { Layout.fillHeight: true }

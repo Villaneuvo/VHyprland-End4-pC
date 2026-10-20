@@ -123,7 +123,8 @@ MouseArea {
             Loader { active: root.renaming; visible: active; Layout.fillWidth: true; sourceComponent: renameField }
             Text {
                 Layout.fillWidth: true
-                text: Fs.size(root.item.size) + " · " + Fs.date(root.item.modified)
+                text: root.tab.place === "recent" && root.item.used ? Fs.openedText(root.item.used)
+                    : Fs.size(root.item.size) + " · " + Fs.date(root.item.modified)
                 elide: Text.ElideRight
                 color: Theme.textDim; font.family: Theme.font; font.pixelSize: 12
             }

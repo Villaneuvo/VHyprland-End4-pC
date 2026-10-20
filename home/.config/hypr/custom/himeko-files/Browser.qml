@@ -35,6 +35,9 @@ FocusScope {
     Connections {
         target: root.tab
         function onItemsChanged() {
+            if (root.pendingSelect && root.tab.items.some(it => it.path === root.pendingSelect)) {
+                root.tab.selectPath(root.pendingSelect); root.ensureVisible(root.pendingSelect); root.pendingSelect = "";
+            }
             if (root.lookItem && !root.tab.items.some(it => it.path === root.lookItem.path)) root.closeLook();
             if (!root.propsItems) return;
             const followed = root.propsFollow ? root.tab.items.find(it => it.path === root.propsFollow) : null;
@@ -68,7 +71,12 @@ FocusScope {
 
     readonly property string title: tab ? tab.name : "Files"
 
+    readonly property var sorts: (tab && tab.place === "recent" ? [["used", "Last opened"]] : [])
+        .concat([["name", "Name"], ["modified", "Modified"], ["size", "Size"], ["kind", "Kind"]], tab && tab.virtual ? [["location", "Location"]] : [])
+    readonly property string placeIcon: !tab ? "" : tab.place === "recent" ? "schedule" : tab.place === "starred" ? "star" : ""
     // ---- actions ----
+    function openLocation(item) { tab.go(Fs.parentOf(item.path)); pendingSelect = item.path; }
+    property string pendingSelect: ""      // Open Item Location: selected once the folder has listed it
     function activate(item) {
         if (!item) return;
         if (item.isDir) tab.go(item.path);
@@ -108,6 +116,7 @@ FocusScope {
     }
     function goTo(text) {
         let p = text.trim().replace(/^~(?=\/|$)/, Fs.home);
+        if (p === Fs.recentPath || p === Fs.starredPath) return tab.go(p);
         if (p.startsWith("file://")) p = decodeURIComponent(p.slice(7));
         if (!p.startsWith("/")) p = tab.path + "/" + p;
         Fs.run(["test", "-d", p], (t, code) => code ? Fs.failed("No such folder: " + text) : tab.go(p));
@@ -116,7 +125,7 @@ FocusScope {
     // Leaving a folder closes whatever was open on it
     Connections {
         target: root.tab
-        function onPathChanged() { root.menuOpen = false; root.renamingPath = ""; root.editingPath = false; root.searching = false; navAnim.dir = root.tab.direction; navAnim.restart(); }
+        function onPathChanged() { root.pendingSelect = ""; root.menuOpen = false; root.renamingPath = ""; root.editingPath = false; root.searching = false; navAnim.dir = root.tab.direction; navAnim.restart(); }
     }
     onTabIndexChanged: { navAnim.dir = 0; navAnim.restart(); }
     Connections {
@@ -157,14 +166,16 @@ FocusScope {
             ? apps.map(a => ({ label: a.name + (a.isDefault ? "  ·  default" : ""), appIcon: Quickshell.iconPath(a.icon, true), action: () => Fs.launchApp(a.id, one.path) }))
             : [{ label: "No apps for this file", disabled: true }])) });
         if (one && one.isDir) e.push({ icon: "tab", label: "Open in new tab", action: () => newTab(one.path, false) });
+        if (one && tab.virtual) e.push({ icon: "folder_open", label: "Open Item Location", action: () => openLocation(one) });
+        if (tab.place === "recent") e.push({ icon: "history_toggle_off", label: "Remove from Recent", action: () => tab.paths().forEach(p => Fs.recentRemove(p)) });
         if (kind === "image") e.push({ icon: "wallpaper", label: "Set as wallpaper", action: () => Fs.setWallpaper(one.path) });
         if (one && Fs.isArchive(one)) e.push({ icon: "unarchive", label: "Extract here", action: () => Fs.extract(one.path) });
-        else e.push({ icon: "folder_zip", label: "Compress to ZIP", action: () => Fs.compress(tab.path, tab.paths()) });
+        else if (!tab.virtual) e.push({ icon: "folder_zip", label: "Compress to ZIP", action: () => Fs.compress(tab.path, tab.paths()) });
         e.push({ icon: "link", label: "Copy path", action: () => Fs.copyText(tab.paths().join("\n")) });
         if (one && one.isDir) e.push({ icon: "terminal", label: "Open terminal here", action: () => Fs.terminal(one.path) });
         e.push({ separator: true });
         e.push({ icon: "info", label: "Properties", hint: "Alt+Enter", action: () => openProps(tab.selectedItems) });
-        e.push({ icon: "folder_managed", label: "Show in Dolphin", action: () => Fs.openDolphin(one && one.isDir ? one.path : tab.path) });
+        e.push({ icon: "folder_managed", label: "Show in Dolphin", action: () => Fs.openDolphin(one && one.isDir ? one.path : tab.virtual && one ? Fs.parentOf(one.path) : tab.path) });
         e.push({ icon: "delete_forever", label: "Delete permanently", hint: "Shift+Del", danger: true, action: confirmDelete });
         showMenu(x, y, quick, e);
     }
@@ -174,7 +185,10 @@ FocusScope {
                 { icon: "delete_sweep", label: "Empty Trash", danger: true, action: () => Fs.run(["gio", "trash", "--empty"], () => Fs.toast("Trash emptied", false)) }
             ]);
         }
-        const sorts = [["name", "Name"], ["modified", "Modified"], ["size", "Size"], ["kind", "Kind"]];
+        if (tab.virtual) return showMenu(x, y, [], [   // nothing is "here" in Recent and Starred
+            { icon: "select_all", label: "Select all", hint: "Ctrl+A", action: () => tab.selectAll() },
+            { icon: "sort", label: "Sort by", sub: sorts.map(s => ({ icon: tab.sortKey === s[0] ? "check" : "", label: s[1], action: () => setSort(s[0]) })) }
+        ]);
         showMenu(x, y, [], [
             { icon: "create_new_folder", label: "New Folder", hint: "Ctrl+Shift+N", action: () => Fs.newFolder(tab.path) },
             { icon: "content_paste", label: "Paste", hint: "Ctrl+V", action: () => Fs.paste(tab.path) },
@@ -190,7 +204,7 @@ FocusScope {
     }
     function setSort(key) {
         if (tab.sortKey === key) tab.sortDesc = !tab.sortDesc;
-        else { tab.sortKey = key; tab.sortDesc = key === "modified" || key === "size"; }
+        else { tab.sortKey = key; tab.sortDesc = key === "modified" || key === "size" || key === "used"; }
     }
 
     // ---- keyboard ----
@@ -239,9 +253,9 @@ FocusScope {
         else if (ctrl && k === Qt.Key_A) tab.selectAll();
         else if (ctrl && k === Qt.Key_C && tab.selectedCount) Fs.setClip("copy", tab.paths());
         else if (ctrl && k === Qt.Key_X && tab.selectedCount && !tab.inTrash) Fs.setClip("move", tab.paths());
-        else if (ctrl && k === Qt.Key_V && !tab.inTrash) Fs.paste(tab.path);
+        else if (ctrl && k === Qt.Key_V && !tab.inTrash && !tab.virtual) Fs.paste(tab.path);
         else if (ctrl && k === Qt.Key_Z) Fs.undo();
-        else if (ctrl && shift && k === Qt.Key_N) Fs.newFolder(tab.path);
+        else if (ctrl && shift && k === Qt.Key_N && !tab.virtual) Fs.newFolder(tab.path);
         else if (ctrl && k === Qt.Key_1) tab.viewMode = "icons";
         else if (ctrl && k === Qt.Key_2) tab.viewMode = "details";
         else if (ctrl && (k === Qt.Key_Plus || k === Qt.Key_Equal)) zoom = Math.min(2, zoom + 0.15);
@@ -353,7 +367,7 @@ FocusScope {
 
                 // Empty states
                 ColumnLayout {
-                    visible: root.tab && root.tab.model.status === 2 && root.tab.items.length === 0 && root.tab.all.length >= 0
+                    visible: root.tab && root.tab.ready && root.tab.items.length === 0
                     anchors.centerIn: parent
                     anchors.verticalCenterOffset: 60
                     spacing: 10
@@ -361,12 +375,14 @@ FocusScope {
                         Layout.alignment: Qt.AlignHCenter
                         implicitWidth: 96; implicitHeight: 96
                         Shape { anchors.fill: parent; kind: "flower"; color: Theme.surfaceHigh }
-                        Icon { anchors.centerIn: parent; name: root.tab && root.tab.query ? "search_off" : (root.tab && root.tab.inTrash ? "delete" : "folder_open"); size: 40; color: Theme.textDim }
+                        Icon { anchors.centerIn: parent; name: !root.tab ? "" : root.tab.query ? "search_off" : root.tab.inTrash ? "delete" : root.placeIcon || "folder_open"; size: 40; color: Theme.textDim }
                         Icon { x: 78; y: -6; name: "star"; filled: true; size: 18; color: Theme.tertiary }
                     }
                     Text {
                         Layout.alignment: Qt.AlignHCenter
-                        text: root.tab && root.tab.query ? "Nothing matches “" + root.tab.query + "”" : (root.tab && root.tab.inTrash ? "Trash is empty" : "This folder is empty")
+                        text: !root.tab ? "" : root.tab.query ? "Nothing matches “" + root.tab.query + "”" : root.tab.inTrash ? "Trash is empty"
+                            : root.tab.place === "recent" ? "Files you open will show here"
+                            : root.tab.place === "starred" ? "Star files and folders to find them here" : "This folder is empty"
                         color: Theme.textDim; font.family: Theme.font; font.pixelSize: 15
                     }
                 }
@@ -438,6 +454,7 @@ FocusScope {
                         flickableDirection: Flickable.HorizontalFlick
                         readonly property var parts: {
                             if (!root.tab) return [];
+                            if (root.tab.virtual) return [{ label: root.tab.name, path: root.tab.path, icon: root.placeIcon }];
                             const p = root.tab.path, out = [];
                             if (p.startsWith(Fs.home)) {
                                 out.push({ label: "Home", path: Fs.home, icon: "home" });
@@ -852,13 +869,12 @@ FocusScope {
                     id: sortBtn
                     implicitHeight: 44
                     icon: root.tab && root.tab.sortDesc ? "arrow_downward" : "arrow_upward"
-                    label: !header.narrow && root.tab ? ({ name: "Name", modified: "Modified", size: "Size", kind: "Kind" })[root.tab.sortKey] : ""
+                    label: !header.narrow && root.tab ? (root.sorts.find(x => x[0] === root.tab.sortKey) ?? ["", ""])[1] : ""
                     bg: containsMouse ? Theme.hover : "transparent"
                     Rectangle { anchors.fill: parent; radius: height / 2; color: "transparent"; border.width: 1; border.color: Theme.outlineVariant }
                     onClicked: {
                         const p = sortBtn.mapToItem(root, -120, 48);
-                        const s = [["name", "Name"], ["modified", "Modified"], ["size", "Size"], ["kind", "Kind"]];
-                        root.showMenu(p.x, p.y, [], s.map(x => ({ icon: root.tab.sortKey === x[0] ? (root.tab.sortDesc ? "arrow_downward" : "arrow_upward") : "", label: x[1], action: () => root.setSort(x[0]) })));
+                        root.showMenu(p.x, p.y, [], root.sorts.map(x => ({ icon: root.tab.sortKey === x[0] ? (root.tab.sortDesc ? "arrow_downward" : "arrow_upward") : "", label: x[1], action: () => root.setSort(x[0]) })));
                     }
                 }
             }
@@ -870,6 +886,8 @@ FocusScope {
         target: "files"
         function go(path: string): void { root.goTo(path); }
         function view(mode: string): void { root.tab.viewMode = mode; }
+        function open(names: string): void { select(names); root.openSelection(); }
+        function recentRemove(name: string): void { const it = root.tab.items.find(x => x.name === name); if (it) Fs.recentRemove(it.path); }
         function select(names: string): void {
             const want = names.split("|"), s = {};
             root.tab.items.forEach(it => { if (want.indexOf(it.name) >= 0) s[it.path] = true; });

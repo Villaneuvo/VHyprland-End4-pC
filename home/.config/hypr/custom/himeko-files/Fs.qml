@@ -197,6 +197,12 @@ Singleton {
         run(["env", "LC_ALL=C", "timeout", "3", "find", "-L", dir, "-mindepth", "2", "-maxdepth", "2", "-not", "-name", ".*", "-printf", "%h\\n"],
             (text, code, err) => cb(code === 124 ? null : tallyCounts(text, err)));
     }
+    // The same for a list of folders (Recent, Starred): their own items
+    function countFolders(dirs, cb) {
+        run(["env", "LC_ALL=C", "timeout", "3", "find", "-L"].concat(dirs, ["-mindepth", "1", "-maxdepth", "1", "-not", "-name", ".*", "-printf", "%h\\n"]),
+            (text, code, err) => cb(code === 124 ? null : tallyCounts(text, err)));
+    }
+    function parentOf(path) { return path.slice(0, path.lastIndexOf("/")) || "/"; }
     function countLabel(n) {
         if (n == null) return "Folder";
         if (n === 0) return "Empty";
