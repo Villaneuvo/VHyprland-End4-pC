@@ -15,6 +15,7 @@ ShellRoot {
             id: browser
             anchors.fill: parent
             startPath: Quickshell.env("HF_PATH") || Fs.home
+            startAddress: Quickshell.env("HF_ADDRESS") || ""
             focus: true
         }
     }

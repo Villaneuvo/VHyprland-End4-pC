@@ -8,6 +8,7 @@ import Quickshell.Io
 FocusScope {
     id: root
     property string startPath: Fs.home
+    property string startAddress: ""        // himeko-files sftp://… : connect and open it
     property var tabs: []
     property int tabIndex: 0
     readonly property var tab: tabs[tabIndex] ?? null
@@ -67,7 +68,7 @@ FocusScope {
         else if (i < tabIndex) tabIndex--;
         t.destroy();
     }
-    Component.onCompleted: { newTab(startPath); view.forceActiveFocus(); }
+    Component.onCompleted: { newTab(startPath); view.forceActiveFocus(); if (startAddress) openAddress(startAddress); }
 
     readonly property string title: tab ? tab.name : "Files"
 
@@ -114,7 +115,16 @@ FocusScope {
             { icon: "close", label: "Cancel", action: () => {} }
         ]);
     }
+    // A server address: a computer opens its share list, anything else connects (asking for a password if needed)
+    function openAddress(text, remember) {
+        const a = text.trim(), t = tab;
+        if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(a)) return Fs.failed("Add a protocol, like smb:// or sftp://");
+        if (Fs.isServerAddress(a)) return t.go("network:" + a.replace(/\/?$/, "/"));
+        Fs.toast("Connecting to “" + Fs.netHost(a) + "”…", false);
+        Fs.connect(a, remember === true, (path) => t.go(path));
+    }
     function goTo(text) {
+        if (Fs.isAddress(text.trim())) return openAddress(text);
         let p = text.trim().replace(/^~(?=\/|$)/, Fs.home);
         if (p === Fs.recentPath || p === Fs.starredPath) return tab.go(p);
         if (p.startsWith("file://")) p = decodeURIComponent(p.slice(7));
@@ -133,6 +143,7 @@ FocusScope {
         function onToast(text, undoable) { toast.show(text, undoable && Fs.undoAction !== null, false); }
         function onFailed(text) { toast.show(text, false, true); }
         function onCreated(path) { root.tab.selectPath(path); root.renamingPath = path; }
+        function onNetAsk(req) { root.asks = root.asks.concat([req]); }
     }
 
     // ---- menus ----
@@ -919,6 +930,10 @@ FocusScope {
         target: "files"
         function go(path: string): void { root.goTo(path); }
         function view(mode: string): void { root.tab.viewMode = mode; }
+        function address(text: string): void { root.openAddress(text); }
+        function authState(): string { return authLoader.item ? JSON.stringify(authLoader.item.state()) : ""; }
+        function authFill(json: string): void { authLoader.item?.fill(JSON.parse(json)); }
+        function authAnswer(button: string): void { authLoader.item?.press(button); }
         function open(names: string): void { select(names); root.openSelection(); }
         function pin(name: string): void { const it = root.tab.items.find(x => x.name === name), p = it ? it.path : root.tab.path; if (!Fs.isPinned(p)) root.togglePin(p); }
         function unpin(name: string): void { const it = root.tab.items.find(x => x.name === name); Fs.unpin(it ? it.path : name || root.tab.path); }
@@ -1020,6 +1035,20 @@ FocusScope {
                 // Rendered PDF pages live on tmpfs (RAM): drop them once Quick Look is closed
                 Quickshell.execDetached(["rm", "-rf", Quickshell.env("XDG_RUNTIME_DIR") + "/himeko-files/pages"]);
             }
+        }
+        onLoaded: item.forceActiveFocus()
+    }
+
+    // ---- gvfs asks: password or question, one at a time ----
+    property var asks: []
+    Loader {
+        id: authLoader
+        anchors.fill: parent
+        active: root.asks.length > 0
+        sourceComponent: AuthDialog {
+            req: root.asks[0]
+            backdrop: view
+            onDone: { root.asks = root.asks.slice(1); view.forceActiveFocus(); }
         }
         onLoaded: item.forceActiveFocus()
     }

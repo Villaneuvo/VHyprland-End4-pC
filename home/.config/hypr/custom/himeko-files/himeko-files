@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Opens Himeko Files at a folder. Accepts a path, a file:// URI or a file (opens the folder it is in).
 p=${1:-$HOME}
+# A server address (sftp://…, smb://…) is opened by the app itself, once it's up
+case "$p" in file://*) ;; [a-zA-Z]*://*) export HF_ADDRESS="$p"; p=$HOME ;; esac
 case "$p" in file://*) p=${p#file://}; p=$(printf '%b' "${p//%/\\x}") ;; esac
 [ -f "$p" ] && p=$(dirname -- "$p")
 [ -d "$p" ] || p=$HOME
