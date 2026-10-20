@@ -23,6 +23,7 @@
 #   ops.sh text FILE                     -> its first 256 KB; exit 3 (no output) when they hold a NUL byte (binary)
 #   ops.sh thumbexts                     -> extensions that have a thumbnailer, one per line
 #   ops.sh thumb SRC DST SIZE KIND       -> exit 0 when DST was written (KIND: the app's kind, image/video/…)
+#   ops.sh net mounts|mount|unmount|browse|schemes … -> network.py (servers through gvfs)
 #   ops.sh recent|starred|bookmarks|servers … -> places.py (Recent, Starred, pinned folders); placesmoved OLD NEW
 # Thumbnailers, ImageMagick and ffmpeg parse untrusted files, so they run in bwrap (see sandbox).
 # Env: HF_THUMBNAILERS (colon-separated thumbnailer dirs), HF_MIME (tests: skip MIME detection)
@@ -67,6 +68,7 @@ thumbnailers() { # usable .thumbnailer files, user dir first; glycin-* start the
 cmd=${1:-}; shift || true
 case "$cmd" in
 recent|starred|bookmarks|servers) exec python3 -I "$(dirname -- "$0")/places.py" "$cmd" "$@" ;;
+net) exec python3 -I "$(dirname -- "$0")/network.py" "$@" ;;
 placesmoved) exec python3 -I "$(dirname -- "$0")/places.py" moved "$@" ;;
 paste)
     mode=$1 dest=$2; shift 2
@@ -79,7 +81,9 @@ paste)
         elif case "$dest/" in "$src"/*) true ;; *) false ;; esac; then echo "skip: can't put a folder inside itself: $src" >&2
         else
             target=$(unique "$dest" "$(basename -- "$src")")
-            if [ "$mode" = move ]; then mv -n -- "$src" "$target"; else cp -a -- "$src" "$target"; fi || target=
+            # Servers (gvfs FUSE) can't take owners and modes: cp -a stops there, plain cp -r works
+            case "$src/ $dest/" in *"${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/gvfs/"*) cpflags=-r ;; *) cpflags=-a ;; esac
+            if [ "$mode" = move ]; then mv -n -- "$src" "$target"; else cp "$cpflags" -- "$src" "$target"; fi || target=
         fi
         printf '%s\n' "$target"
     done ;;
@@ -492,6 +496,37 @@ import os; os.replace(sys.argv[1]+'.tmp', sys.argv[1])" "$t/recent.xbel"; done )
     "$me" bookmarks unpin "sftp://host/srv/data"
     check "bookmarks unpin by address" "$(wc -l <"$B")" "1"
     unset HF_SERVERS XDG_CONFIG_HOME
+    # ---- network: a private session bus and gvfs, so test mounts never reach the user's windows ----
+    # The bus can start gvfs and nothing else: a second gnome-keyring there would rewrite the user's login keyring
+    if command -v dbus-run-session >/dev/null && [ -x /usr/libexec/gvfsd-dav ]; then
+        mkdir -p "$t/rt" "$t/dav/sub" "$t/bus"; chmod 700 "$t/rt"; echo hello >"$t/dav/a.txt"; echo up >"$t/up.txt"
+        ln -s /usr/share/dbus-1/services/org.gtk.vfs.Daemon.service /usr/share/dbus-1/services/org.gtk.vfs.Metadata.service "$t/bus/"
+        sed "s|<standard_session_servicedirs */>|<servicedir>$t/bus</servicedir>|" /usr/share/dbus-1/session.conf >"$t/bus.conf"
+        keyring=$(stat -c %Y "$HOME/.local/share/keyrings/login.keyring" 2>/dev/null)
+        port=$((20000 + RANDOM % 20000))
+        python3 -I "$(dirname -- "$0")/testdav.py" "$t/dav" "$port" tester secret & dav=$!; sleep 0.5
+        env XDG_RUNTIME_DIR="$t/rt" dbus-run-session --config-file="$t/bus.conf" -- bash -c '
+            me=$1 port=$2 t=$3 a="dav://127.0.0.1:$2"
+            printf "%s\n" "{\"user\": \"tester\", \"password\": \"wrong\", \"save\": \"never\"}" \
+                          "{\"user\": \"tester\", \"password\": \"secret\", \"save\": \"never\"}" | "$me" net mount "$a/sub" >"$t/m1"
+            "$me" net mounts | cut -f2 >"$t/m2"
+            p=$(tail -1 "$t/m1" | python3 -I -c "import json,sys; print(json.load(sys.stdin)[\"path\"])")
+            ls "$p/.." >"$t/m3"; "$me" paste copy "$p" "$t/up.txt" >"$t/m4"
+            echo "{\"choice\": 1}" | HF_ASK_QUESTION=1 "$me" net mount "$a/" >"$t/m5"
+            "$me" net unmount "$a/"; "$me" net mounts | wc -l >"$t/m6"
+            s=$(date +%s); "$me" net browse "dav://127.0.0.1:1/" </dev/null | tail -1 >"$t/m7"; echo $(( $(date +%s) - s )) >"$t/m8"
+        ' _ "$me" "$port" "$t" 2>/dev/null
+        kill $dav
+        check "net mount: asks again after a wrong password" "$(grep -c '"ask": "password"' "$t/m1")" "2"
+        check "net mount: prints the folder's FUSE path" "$(tail -1 "$t/m1" | grep -c "/gvfs/dav:host=127.0.0.1,port=$port,ssl=false/sub\"")" "1"
+        check "net mounts: lists it" "$(cat "$t/m2")" "dav://127.0.0.1:$port/"
+        check "net: the FUSE folder lists the server" "$(tr '\n' ' ' <"$t/m3")" "a.txt sub "
+        check "paste: copies onto a server" "$(grep -c '/sub/up.txt$' "$t/m4")$(cat "$t/dav/sub/up.txt")" "1up"
+        check "net mount: question, then cancel" "$(head -1 "$t/m5" | grep -c '"ask": "question"')$(tail -1 "$t/m5")" '1{"error": "Cancelled"}'
+        check "net unmount: gone" "$(cat "$t/m6")" "0"
+        check "net browse: unreachable fails fast with a message" "$(grep -c '"error"' "$t/m7")$(( $(cat "$t/m8") < 10 ))" "11"
+        check "net tests leave the login keyring alone" "$(stat -c %Y "$HOME/.local/share/keyrings/login.keyring" 2>/dev/null)" "$keyring"
+    fi
     exit $fail ;;
 *) echo "usage: see the header of $0" >&2; exit 2 ;;
 esac
