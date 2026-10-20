@@ -73,11 +73,81 @@ Singleton {
                 });
                 walk(JSON.parse(text).blockdevices);
             } catch (e) {}
-            root.devices = list;
+            if (JSON.stringify(list) !== JSON.stringify(root.devices)) root.devices = list;   // every 4 s: only real changes
         });
         run(["bash", "-c", "ls -A \"$1\" 2>/dev/null | wc -l", "_", root.trashDir], (text) => root.trashCount = Number(text.trim()) || 0);
     }
     Timer { interval: 4000; running: true; repeat: true; triggeredOnStart: true; onTriggered: root.refreshPlaces() }
+
+    // ---- Recent, Starred, pinned folders: places.py reads and writes the files, we watch them (no polling) ----
+    readonly property string recentPath: "recent:"
+    readonly property string starredPath: "starred:"
+    readonly property string recentFile: Quickshell.env("HF_RECENT") || home + "/.local/share/recently-used.xbel"
+    readonly property string starredFile: Quickshell.env("HF_STARRED") || home + "/.local/state/himeko-files/starred"
+    readonly property string bookmarksFile: (Quickshell.env("XDG_CONFIG_HOME") || home + "/.config") + "/gtk-3.0/bookmarks"
+    property var bookmarks: []           // GTK's bookmarks: [{ uri, path ("" for other schemes), label, name }]
+    property var pins: []                // the folders among them, in order, + exists
+    property var starred: ({})           // path -> true
+    function isStarred(path) { return starred[path] === true; }
+    FileView {
+        path: root.bookmarksFile; watchChanges: true; printErrors: false
+        onFileChanged: reload()
+        onLoaded: root.bookmarks = root.parseBookmarks(text())
+        onLoadFailed: root.bookmarks = []
+    }
+    FileView {
+        path: root.starredFile; watchChanges: true; printErrors: false
+        onFileChanged: reload()
+        onLoaded: { const m = {}; for (const p of root.lines(text())) m[p] = true; root.starred = m; }
+        onLoadFailed: root.starred = {}
+    }
+    onBookmarksChanged: checkPins()
+    onDevicesChanged: checkPins()           // a pinned folder on a drive comes and goes with it
+    function parseBookmarks(text) {
+        return lines(text).filter(l => l.trim()).map(l => {
+            const i = l.indexOf(" "), uri = i < 0 ? l : l.slice(0, i), label = i < 0 ? "" : l.slice(i + 1);
+            let path = "";
+            if (uri.startsWith("file:///")) try { path = decodeURIComponent(uri.slice(7)).replace(/(.)\/+$/, "$1"); } catch (e) {}
+            return { uri: uri, path: path, label: label, name: label || path.slice(path.lastIndexOf("/") + 1) || uri };
+        });
+    }
+    readonly property var pinIcons: ({ documents: "description", download: "download", music: "music_note",
+                                       pictures: "image", videos: "movie", desktop: "desktop_windows" })
+    function pinIcon(path, dirs) {
+        for (const k in pinIcons) if (dirs[k] === path) return pinIcons[k];
+        return "folder";
+    }
+    function openedText(d) { return "Opened " + date(d); }
+    function checkPins() {
+        const bm = bookmarks, list = bm.filter(b => b.path);
+        if (!list.length) return pins = [];
+        run(["bash", "-c", "for p; do [ -d \"$p\" ] && echo 1 || echo 0; done", "_"].concat(list.map(b => b.path)), (text) => {
+            if (root.bookmarks !== bm) return;   // changed meanwhile: that change asks again
+            const ok = root.lines(text);
+            root.pins = list.map((b, i) => Object.assign({ exists: ok[i] === "1" }, b));
+        });
+    }
+    // places.py lines (path, isDir, size, mtime[, used]) as items like Tab's
+    function placeItems(text) {
+        return lines(text).map(l => {
+            const f = l.split("\t"), name = f[0].slice(f[0].lastIndexOf("/") + 1), dot = name.lastIndexOf(".");
+            return { name: name, path: f[0], isDir: f[1] === "1", size: Number(f[2]), modified: new Date(f[3] * 1000),
+                     suffix: dot > 0 ? name.slice(dot + 1) : "", used: f[4] ? new Date(f[4] * 1000) : null };
+        });
+    }
+    function places(args, cb) {
+        run([ops].concat(args), (t, code, err) => { if (code) failed(err.trim() || "Couldn't save the change"); else if (cb) cb(); });
+    }
+    function recentList(cb) { run([ops, "recent", "list"], (text) => cb(placeItems(text))); }
+    function starredList(cb) { run([ops, "starred", "list"], (text) => cb(placeItems(text))); }
+    function recentAdd(path) { run([ops, "recent", "add", path], null); }
+    function recentRemove(path, cb) { places(["recent", "remove", path], cb); }
+    function setStarred(paths, on) { places(["starred", on ? "add" : "remove"].concat(paths)); }
+    function pin(path) { places(["bookmarks", "pin", path]); }
+    function unpin(path) { places(["bookmarks", "unpin", path]); }
+    function renamePin(path, label) { places(["bookmarks", "rename", path, label]); }
+    function movePin(path, d) { places(["bookmarks", "move", path, String(d)]); }
+    function placesMoved(from, to) { run([ops, "placesmoved", from, to], null); }
 
     function mount(dev, cb) { run(["udisksctl", "mount", "-b", dev], (t, code, e) => { root.refreshPlaces(); if (code) root.failed(e.trim()); else if (cb) cb(); }); }
     function eject(dev) { run(["bash", "-c", "udisksctl unmount -b \"$1\" && udisksctl power-off -b \"$1\"", "_", dev], (t, code, e) => { root.refreshPlaces(); if (code) root.failed(e.trim()); else root.toast("Safe to remove", false); }); }
@@ -318,6 +388,7 @@ Singleton {
             const made = lines(text);
             if (mode === "move" && made.length) {
                 undoAction = { kind: "move", pairs: made.map((t, i) => [t, paths[i]]) };
+                made.forEach((t, i) => placesMoved(paths[i], t));   // stars, pins and recent entries follow
                 clip = { mode: "", paths: [] };
             } else if (made.length) {
                 undoAction = { kind: "copy", paths: made };
@@ -352,6 +423,7 @@ Singleton {
             run(["test", "-e", path], (t2, stillThere) => {
                 if (stillThere === 0) return failed("“" + name + "” already exists");
                 undoAction = { kind: "rename", from: target, to: path };
+                placesMoved(path, target);
                 if (cb) cb(target);
             });
         });
@@ -387,14 +459,14 @@ Singleton {
         if (!a) return;
         undoAction = null;
         if (a.kind === "trash") run([ops, "restore"].concat(a.uris), (t, c, e) => c ? failed(e.trim()) : toast("Restored", false));
-        else if (a.kind === "rename") run(["mv", "-n", "-T", "--", a.from, a.to], (t, c, e) => c ? failed(e.trim()) : toast("Rename undone", false));
-        else if (a.kind === "move") a.pairs.forEach(p => run(["mv", "-n", "-T", "--", p[0], p[1]], (t, c, e) => { if (c) failed(e.trim()); }));
+        else if (a.kind === "rename") run(["mv", "-n", "-T", "--", a.from, a.to], (t, c, e) => { if (c) return failed(e.trim()); placesMoved(a.from, a.to); toast("Rename undone", false); });
+        else if (a.kind === "move") a.pairs.forEach(p => run(["mv", "-n", "-T", "--", p[0], p[1]], (t, c, e) => { if (c) return failed(e.trim()); placesMoved(p[0], p[1]); }));
         else if (a.kind === "copy") run([ops, "trash"].concat(a.paths), (t, c, e) => c ? failed(e.trim()) : toast("Undone", false));
     }
 
     // ---- opening things ----
-    function open(path) { Quickshell.execDetached(["gio", "open", path]); }
-    function openIn(desktopFile, path) { Quickshell.execDetached(["gio", "launch", desktopFile, path]); }
+    function open(path) { Quickshell.execDetached(["gio", "open", path]); recentAdd(path); }
+    function openIn(desktopFile, path) { Quickshell.execDetached(["gio", "launch", desktopFile, path]); recentAdd(path); }
     function openDolphin(path) { Quickshell.execDetached(["dolphin", path]); }
     function terminal(dir) { Quickshell.execDetached(["kitty", "--directory", dir]); }
     function setWallpaper(path) {
@@ -431,7 +503,7 @@ Singleton {
             cb(apps, mime);
         });
     }
-    function launchApp(id, path) { Quickshell.execDetached(["gtk-launch", id, path]); }
+    function launchApp(id, path) { Quickshell.execDetached(["gtk-launch", id, path]); recentAdd(path); }
     // Details for the info panel: { modified, created, dims, count }
     function details(item, cb) {
         const cmd = item.isDir

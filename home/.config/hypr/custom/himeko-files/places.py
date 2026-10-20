@@ -7,6 +7,7 @@
   bookmarks pin PATH [LABEL] | unpin PATH | rename PATH LABEL | move PATH -1|1   (GTK's bookmarks file)
   moved OLD NEW                -> stars, pins and recent entries follow a rename/move
 Env: HF_RECENT, HF_STARRED, XDG_CONFIG_HOME. Writes: temp file next to the real target + rename, mode kept."""
+import fcntl
 import os
 import sys
 import tempfile
@@ -260,6 +261,10 @@ def main(argv):
         fail("usage: see places.py")
     what, args = argv[0], argv[1:]
     op = args[0] if args else ""
+    if op != "list":
+        # Every write is read-change-write: ours run one at a time (several files opened at once, two windows)
+        lock = open(os.path.join(os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir(), "himeko-files-places.lock"), "a")
+        fcntl.flock(lock, fcntl.LOCK_EX)
     if what == "recent" and op == "list":
         lines(recent_list(int(args[1]) if len(args) > 1 else 300))
     elif what == "recent" and op in ("add", "remove") and len(args) == 2:

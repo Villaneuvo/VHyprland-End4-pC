@@ -15,6 +15,17 @@ ShellRoot {
     Timer { id: done; interval: 50; onTriggered: Qt.quit() }
     Component.onCompleted: { try { run(); } catch (e) { failures++; console.log("FAIL exception: " + e); } finally { console.log("selftest: " + failures + " failures"); done.start(); } }
     function run() {
+        // ---- places rules ----
+        const bm = Fs.parseBookmarks("file:///home/u/Documents\nsftp://host/srv Server\nfile:///home/u/Proj%20%231%20%25%20%E2%9C%A8 Projects ✨\n\n");
+        check("bookmarks: count", bm.length, 3);
+        check("bookmarks: plain", [bm[0].path, bm[0].label, bm[0].name], ["/home/u/Documents", "", "Documents"]);
+        check("bookmarks: other scheme kept, no path", [bm[1].uri, bm[1].path, bm[1].label], ["sftp://host/srv", "", "Server"]);
+        check("bookmarks: decoded path and label", [bm[2].path, bm[2].name], ["/home/u/Proj #1 % ✨", "Projects ✨"]);
+        check("pinIcon: xdg", Fs.pinIcon("/h/Dl", { download: "/h/Dl", desktop: "/h/Desk" }), "download");
+        check("pinIcon: desktop", Fs.pinIcon("/h/Desk", { download: "/h/Dl", desktop: "/h/Desk" }), "desktop_windows");
+        check("pinIcon: other", Fs.pinIcon("/tmp/x", { download: "/h/Dl" }), "folder");
+        check("openedText", Fs.openedText(new Date(Date.now() - 30000)), "Opened Just now");
+
         // ---- dates (Fs.date) ----
         const now = new Date(2026, 9, 16, 12, 0, 0);
         const at = (y, mo, d, h, mi) => new Date(y, mo - 1, d, h, mi);

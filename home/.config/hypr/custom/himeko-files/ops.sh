@@ -453,6 +453,15 @@ import os; os.replace(sys.argv[1]+'.tmp', sys.argv[1])" "$t/recent.xbel"; done )
     # ---- speed: 1,000 entries ----
     cp "$HOME/.local/share/recently-used.xbel" "$t/big.xbel" 2>/dev/null && { s=$(date +%s%N); HF_RECENT=$t/big.xbel "$me" recent list >/dev/null; check "recent list of the real history < 300 ms" "$(( ($(date +%s%N)-s)/1000000 < 300 ))" "1"; }
     unset HF_RECENT HF_STARRED XDG_CONFIG_HOME
+    # ---- places: our own writers in parallel (several files opened at once, two windows) lose nothing ----
+    export HF_RECENT=$t/par.xbel HF_STARRED=$t/state/par
+    cp "$HOME/.local/share/recently-used.xbel" "$HF_RECENT" 2>/dev/null || : >"$HF_RECENT"
+    for i in $(seq 8); do : >"$t/pl/p$i"; done
+    for i in $(seq 8); do "$me" recent add "$t/pl/p$i" & done; wait
+    check "recent: parallel adds all land" "$("$me" recent list | cut -f1 | grep -c '/pl/p[0-9]$')" "8"
+    for i in $(seq 8); do "$me" starred add "$t/pl/p$i" & done; wait
+    check "starred: parallel adds all land" "$(grep -c '/pl/p[0-9]$' "$HF_STARRED")" "8"
+    unset HF_RECENT HF_STARRED
     exit $fail ;;
 *) echo "usage: see the header of $0" >&2; exit 2 ;;
 esac
