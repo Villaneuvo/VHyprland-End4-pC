@@ -90,7 +90,10 @@ Singleton {
     property var pins: []                // the folders among them, in order, + exists
     property var starred: ({})           // path -> true
     function isStarred(path) { return starred[path] === true; }
-    function isPinned(path) { return bookmarks.some(b => b.path === path); }
+    function isPinned(target) {   // a path, or a network address
+        const t = isAddress(target) ? normAddress(target) : target;
+        return bookmarks.some(b => (b.path || normAddress(b.uri)) === t);
+    }
     // A FileView can't watch a file whose folder doesn't exist yet (the first star creates ~/.local/state/himeko-files)
     property bool placesWatching: false
     FileView {
@@ -112,7 +115,8 @@ Singleton {
             const i = l.indexOf(" "), uri = i < 0 ? l : l.slice(0, i), label = i < 0 ? "" : l.slice(i + 1);
             let path = "";
             if (uri.startsWith("file:///")) try { path = decodeURIComponent(uri.slice(7)).replace(/(.)\/+$/, "$1"); } catch (e) {}
-            return { uri: uri, path: path, label: label, name: label || path.slice(path.lastIndexOf("/") + 1) || uri };
+            return { uri: uri, path: path, label: label,
+                     name: path ? label || path.slice(path.lastIndexOf("/") + 1) || uri : isAddress(uri) ? netPinName(uri, label) : label || uri };
         });
     }
     readonly property var pinIcons: ({ documents: "description", download: "download", music: "music_note",
@@ -122,14 +126,16 @@ Singleton {
         return "folder";
     }
     function openedText(d) { return "Opened " + date(d); }
+    // Pins: local folders (checked on disk) and network addresses (never dimmed: we can't know without connecting).
+    // `key` is what the pin menu and places.py use: the path, or the address
     function checkPins() {
-        const bm = bookmarks, list = bm.filter(b => b.path);
-        if (!list.length) return pins = [];
-        run(["bash", "-c", "for p; do [ -d \"$p\" ] && echo 1 || echo 0; done", "_"].concat(list.map(b => b.path)), (text) => {
+        const bm = bookmarks, list = bm.filter(b => b.path || isAddress(b.uri)), local = list.filter(b => b.path);
+        const done = (ok) => {
             if (root.bookmarks !== bm) return;   // changed meanwhile: that change asks again
-            const ok = root.lines(text);
-            root.pins = list.map((b, i) => Object.assign({ exists: ok[i] === "1" }, b));
-        });
+            root.pins = list.map(b => Object.assign({ exists: !b.path || ok[local.indexOf(b)] === "1", network: !b.path, key: b.path || b.uri }, b));
+        };
+        if (!local.length) return done([]);
+        run(["bash", "-c", "for p; do [ -d \"$p\" ] && echo 1 || echo 0; done", "_"].concat(local.map(b => b.path)), (text) => done(root.lines(text)));
     }
     // places.py lines (path, isDir, size, mtime[, used]) as items like Tab's
     function placeItems(text) {
@@ -144,7 +150,7 @@ Singleton {
     }
     function recentList(cb) { run([ops, "recent", "list"], (text) => cb(placeItems(text))); }
     function starredList(cb) { run([ops, "starred", "list"], (text) => cb(placeItems(text))); }
-    function recentAdd(path) { run([ops, "recent", "add", path], null); }
+    function recentAdd(path) { if (!isRemote(path)) run([ops, "recent", "add", path], null); }   // a server's file would point nowhere later
     function recentRemove(paths, cb) { places(["recent", "remove"].concat(paths), cb); }
     function setStarred(paths, on) { places(["starred", on ? "add" : "remove"].concat(paths)); }
     function pin(path) { places(["bookmarks", "pin", path]); }
@@ -154,6 +160,110 @@ Singleton {
     function placesMoved(pairs) { if (pairs.length) run([ops, "placesmoved"].concat(...pairs), null); }   // [[from, to]]
     // ops.sh paste prints one line per source (empty = skipped): [[src, created]] for the ones that happened
     function pastePairs(text, paths) { return text.split("\n").slice(0, paths.length).map((t, i) => [paths[i], t]).filter(p => p[1]); }
+
+    // ---- network: gvfs mounts, browsed through gvfs' FUSE folder; network.py talks to gvfs ----
+    readonly property string gvfsRoot: Quickshell.env("XDG_RUNTIME_DIR") + "/gvfs"
+    property var netMounts: []           // [{ name, uri, path, canUnmount }]
+    signal disconnected(var mount)       // a mount left (unmounted here, in Nautilus, or the server went away)
+    signal netAsk(var req)               // gvfs asks (password, question): the ask object + reply(answer)
+    function isRemote(path) { return netMountOf(path, netMounts) !== null; }
+    function displayPath(path) { return isRemote(path) ? netAddress(path, netMounts) : path.replace(home, "~"); }
+    function netMountOf(path, mounts) { return mounts.find(m => path === m.path || path.startsWith(m.path + "/")) ?? null; }
+    function netAddress(path, mounts) {
+        const m = netMountOf(path, mounts);
+        if (!m) return "";
+        return m.uri.replace(/\/$/, "") + "/" + path.slice(m.path.length).split("/").filter(s => s).map(s => encodeURIComponent(s)).join("/");
+    }
+    function netCrumbs(path, mounts) {
+        const m = netMountOf(path, mounts);
+        if (!m) return [];
+        const out = [{ label: m.name, path: m.path, icon: netIcon(m.uri) }];
+        let acc = m.path;
+        for (const s of path.slice(m.path.length).split("/").filter(x => x)) { acc += "/" + s; out.push({ label: s, path: acc }); }
+        return out;
+    }
+    readonly property var netIcons: ({ smb: "folder_shared", sftp: "dns", ssh: "dns", ftp: "dns", ftps: "dns", nfs: "dns", afp: "dns",
+                                       dav: "cloud", davs: "cloud", mtp: "smartphone", gphoto2: "photo_camera" })
+    function netIcon(uri) { return netIcons[uri.slice(0, Math.max(0, uri.indexOf(":"))).toLowerCase()] ?? "lan"; }
+    function isAddress(text) { return /^[a-z][a-z0-9+.-]*:\/\//i.test(text) && !/^file:/i.test(text); }
+    function isServerAddress(uri) { return /^smb:\/\/[^/]+\/?$/i.test(uri); }   // a computer: its shares are a list
+    function netHost(uri) {
+        const auth = uri.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").split("/")[0], hostport = auth.slice(auth.lastIndexOf("@") + 1);
+        return hostport.startsWith("[") ? hostport.slice(1, hostport.indexOf("]")) : hostport.split(":")[0];
+    }
+    function netPinName(uri, label) {
+        if (label) return label;
+        const parts = uri.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, "").split("/").filter(s => s);
+        let last = parts.length ? parts[parts.length - 1] : "";
+        try { last = decodeURIComponent(last); } catch (e) {}
+        return last ? last + " on " + netHost(uri) : netHost(uri);
+    }
+    // Same rule as places.py: an address without its trailing slashes, except a server's root
+    function normAddress(u) {
+        const m = /^([a-z][a-z0-9+.-]*:\/\/[^/]*)(\/.*)$/i.exec(u);
+        return m ? m[1] + (m[2].replace(/\/+$/, "") || "/") : u;
+    }
+
+    // Mount changes come from `gio mount -o` (idle until something mounts); each burst lists the mounts once
+    Process {
+        running: true
+        command: ["gio", "mount", "-o"]
+        stdout: SplitParser { onRead: (line) => netBurst.restart() }
+    }
+    Timer { id: netBurst; interval: 150; onTriggered: root.refreshMounts() }
+    function refreshMounts() {
+        run([ops, "net", "mounts"], (text) => {
+            const list = root.lines(text).map(l => { const f = l.split("\t"); return { name: f[0], uri: f[1], path: f[2], canUnmount: f[3] === "1" }; });
+            const gone = root.netMounts.filter(m => !list.some(n => n.path === m.path));
+            if (JSON.stringify(list) !== JSON.stringify(root.netMounts)) root.netMounts = list;
+            gone.forEach(m => root.disconnected(m));
+        });
+    }
+
+    // network.py's dialogue: asks go out through netAsk, the answer is written back on its stdin
+    Component {
+        id: talkComp
+        Process {
+            property var lineCb
+            stdinEnabled: true
+            stdout: SplitParser { onRead: (line) => lineCb(line) }
+            onExited: destroy()
+        }
+    }
+    function talk(args, onResult) {
+        const p = talkComp.createObject(root, { command: [ops, "net"].concat(args) });
+        p.lineCb = (line) => {
+            let o;
+            try { o = JSON.parse(line); } catch (e) { return; }
+            if (o.ask) root.netAsk(Object.assign(o, { reply: (a) => p.write(JSON.stringify(a) + "\n") }));
+            else onResult(o);
+        };
+        p.running = true;
+        return p;
+    }
+    function connect(address, remember, cb) {
+        talk(["mount", address], (o) => {
+            if (o.path) {
+                if (remember) places(["servers", "add", address]);
+                refreshMounts();
+                cb(o.path);
+            } else if (o.error && o.error !== "Cancelled") failed(o.error);
+        });
+    }
+    function browse(address, onItem, onDone) {
+        return talk(["browse", address], (o) => o.item ? onItem(o.item) : onDone(o.error && o.error !== "Cancelled" ? o.error : ""));
+    }
+    function unmount(uri, force) {
+        run([ops, "net", "unmount", uri].concat(force ? ["--force"] : []), (t, code, err) => {
+            if (code === 2) {
+                const m = root.netMounts.find(x => x.uri === uri);
+                root.netAsk({ ask: "question", title: "“" + (m ? m.name : root.netHost(uri)) + "” is busy", message: err.trim(),
+                              choices: ["Unmount Anyway", "Cancel"], reply: (a) => { if (a.choice === 0) root.unmount(uri, true); } });
+            } else if (code) root.failed(err.trim() || "Couldn't unmount");
+        });
+    }
+    function serversList(cb) { run([ops, "servers", "list"], (text) => cb(lines(text))); }
+    function serverRemove(uri) { places(["servers", "remove", uri]); }
 
     function mount(dev, cb) { run(["udisksctl", "mount", "-b", dev], (t, code, e) => { root.refreshPlaces(); if (code) root.failed(e.trim()); else if (cb) cb(); }); }
     function eject(dev) { run(["bash", "-c", "udisksctl unmount -b \"$1\" && udisksctl power-off -b \"$1\"", "_", dev], (t, code, e) => { root.refreshPlaces(); if (code) root.failed(e.trim()); else root.toast("Safe to remove", false); }); }
@@ -351,7 +461,7 @@ Singleton {
     property var thumbExts: ({})           // extensions with a system thumbnailer (ops.sh thumbexts, read at startup)
     property var thumbFailed: ({})         // path -> true: failed this session, don't ask again (reassigned on change)
     function canThumb(item) {
-        if (item.isDir || thumbFailed[item.path]) return false;
+        if (item.isDir || thumbFailed[item.path] || isRemote(item.path)) return false;   // never download for a picture
         const k = kindOf(item);
         return k === "image" || k === "video" || (k !== "code" && thumbExts[(item.suffix || "").toLowerCase()] === true);
     }
@@ -527,7 +637,7 @@ Singleton {
     function details(item, cb) {
         const cmd = item.isDir
             ? ["bash", "-c", "stat -c '%W' -- \"$1\"; find \"$1\" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l", "_", item.path]
-            : (kindOf(item) === "image"
+            : (kindOf(item) === "image" && !isRemote(item.path)   // reading a server's picture downloads it
                 ? ["bash", "-c", "stat -c '%W' -- \"$1\"; magick identify -format '%w × %h' \"$1[0]\" 2>/dev/null", "_", item.path]
                 : ["stat", "-c", "%W", "--", item.path]);
         run(cmd, (text) => {
@@ -541,5 +651,5 @@ Singleton {
     Component.onCompleted: {
         run([ops, "thumbexts"], (text) => { const m = {}; for (const e of lines(text)) m[e] = true; root.thumbExts = m; });
         run(["mkdir", "-p", "--", parentOf(bookmarksFile), parentOf(starredFile)], () => root.placesWatching = true);
-        refreshPlaces(); void DesktopEntries.applications.values.length; }
+        refreshPlaces(); refreshMounts(); void DesktopEntries.applications.values.length; }
 }

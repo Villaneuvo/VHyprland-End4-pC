@@ -65,7 +65,7 @@ QtObject {
         all = list;
         if (loadedPath !== path) { loadedPath = path; loadedAt = Date.now(); }
         // Count the subfolders once per visit (F5 resets countedPath); ignore answers for a folder we left
-        if (countedPath !== path && list.some(it => it.isDir)) {
+        if (countedPath !== path && list.some(it => it.isDir) && !Fs.isRemote(path)) {   // counting a server's folders downloads them
             const asked = path;
             countedPath = path;
             Fs.countSubfolders(asked, (c) => { if (tab.path === asked) tab.counts = c; });
@@ -85,7 +85,7 @@ QtObject {
             if (tab.path !== asked) return;   // answer for a place we left
             all = list;
             if (loadedPath !== path) { loadedPath = path; loadedAt = Date.now(); }
-            const dirs = list.filter(it => it.isDir).map(it => it.path);
+            const dirs = list.filter(it => it.isDir && !Fs.isRemote(it.path)).map(it => it.path);
             if (dirs.length) Fs.countFolders(dirs, (c) => { if (tab.path === asked) tab.counts = c; });
         };
         if (place === "recent") Fs.recentList(done);

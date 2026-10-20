@@ -15,6 +15,23 @@ ShellRoot {
     Timer { id: done; interval: 50; onTriggered: Qt.quit() }
     Component.onCompleted: { try { run(); } catch (e) { failures++; console.log("FAIL exception: " + e); } finally { console.log("selftest: " + failures + " failures"); done.start(); } }
     function run() {
+        // ---- network rules ----
+        const mts = [{ name: "share on nas", uri: "smb://nas/share/", path: "/run/user/1000/gvfs/smb-share:server=nas,share=share" },
+                     { name: "127.0.0.1:18080", uri: "dav://127.0.0.1:18080/", path: "/run/user/1000/gvfs/dav:host=127.0.0.1,port=18080,ssl=false" }];
+        check("netMountOf: inside", Fs.netMountOf(mts[0].path + "/docs/a b", mts).name, "share on nas");
+        check("netMountOf: local", Fs.netMountOf("/home/u/docs", mts), null);
+        check("netMountOf: a longer name isn't inside", Fs.netMountOf(mts[0].path + "X", mts), null);
+        check("netAddress: encodes the rest", Fs.netAddress(mts[0].path + "/docs/a b#1", mts), "smb://nas/share/docs/a%20b%231");
+        check("netAddress: root", Fs.netAddress(mts[1].path, mts), "dav://127.0.0.1:18080/");
+        check("netCrumbs", Fs.netCrumbs(mts[0].path + "/docs/<b>x", mts).map(c => c.label), ["share on nas", "docs", "<b>x"]);
+        check("netIcon", ["smb://a/b", "sftp://h/", "ssh://h", "ftp://h", "davs://h", "mtp://p", "nfs://h/x", "zzz://h"].map(u => Fs.netIcon(u)),
+              ["folder_shared", "dns", "dns", "dns", "cloud", "smartphone", "dns", "lan"]);
+        check("isAddress", ["smb://nas", "nas", "/home/u", "file:///x", "ftp://[::1]:2121/"].map(u => Fs.isAddress(u)), [true, false, false, false, true]);
+        check("isServerAddress", ["smb://nas", "smb://nas/", "smb://nas/share", "sftp://host/"].map(u => Fs.isServerAddress(u)), [true, true, false, false]);
+        check("netHost", ["sftp://me@host:2222/srv", "ftp://[2001:db8::1]/", "smb://nas/share"].map(u => Fs.netHost(u)), ["host", "2001:db8::1", "nas"]);
+        check("netPinName", [Fs.netPinName("sftp://host/srv/data", ""), Fs.netPinName("sftp://host/", ""), Fs.netPinName("smb://nas/share", "Office"),
+              Fs.netPinName("smb://nas/My%20Docs", "")], ["data on host", "host", "Office", "My Docs on nas"]);
+
         // ---- places rules ----
         check("pastePairs: skipped source keeps its place", Fs.pastePairs("\n/d/y\n", ["/d/x", "/s/y"]), [["/s/y", "/d/y"]]);
         check("pastePairs: all moved", Fs.pastePairs("/d/a\n/d/b (2)\n", ["/s/a", "/t/b"]), [["/s/a", "/d/a"], ["/t/b", "/d/b (2)"]]);
