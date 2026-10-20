@@ -23,6 +23,7 @@
 #   ops.sh text FILE                     -> its first 256 KB; exit 3 (no output) when they hold a NUL byte (binary)
 #   ops.sh thumbexts                     -> extensions that have a thumbnailer, one per line
 #   ops.sh thumb SRC DST SIZE KIND       -> exit 0 when DST was written (KIND: the app's kind, image/video/…)
+#   ops.sh recent|starred|bookmarks …    -> places.py (Recent, Starred, pinned folders); placesmoved OLD NEW
 # Thumbnailers, ImageMagick and ffmpeg parse untrusted files, so they run in bwrap (see sandbox).
 # Env: HF_THUMBNAILERS (colon-separated thumbnailer dirs), HF_MIME (tests: skip MIME detection)
 set -u
@@ -65,6 +66,8 @@ thumbnailers() { # usable .thumbnailer files, user dir first; glycin-* start the
 
 cmd=${1:-}; shift || true
 case "$cmd" in
+recent|starred|bookmarks) exec python3 -I "$(dirname -- "$0")/places.py" "$cmd" "$@" ;;
+placesmoved) exec python3 -I "$(dirname -- "$0")/places.py" moved "$@" ;;
 paste)
     mode=$1 dest=$2; shift 2
     for src in "$@"; do
@@ -385,6 +388,71 @@ selftest)
     out=$("$me" chmodtree "$t/H" "g+r,o+r" "g+rx,o+rx")
     check "chmodtree leaves .ssh and .gnupg alone" "$(stat -c %a "$t/H/.ssh" "$t/H/.ssh/id_x" | tr '\n' ' ')$(stat -c %a "$t/H/pub")" "700 600 664"
     check "chmodtree counts them as skipped" "$(cut -f1,2 <<<"$out")" "1"$'\t'"3"
+    # ---- places: recent ----
+    export HF_RECENT=$t/recent.xbel HF_STARRED=$t/state/starred XDG_CONFIG_HOME=$t/cfg
+    mkdir -p "$t/pl/Proj #1 % ✨" "$t/pl/b"; : >"$t/pl/a.txt"; : >"$t/pl/b/c.txt"
+    python3 -I - "$t" <<'PY'
+import sys
+from gi.repository import GLib
+t=sys.argv[1]; bf=GLib.BookmarkFile()
+def add(p, mod):
+    u=GLib.filename_to_uri(p, None); bf.add_application(u, "test", "test %u"); bf.set_mime_type(u, "text/plain")
+    bf.set_modified_date_time(u, GLib.DateTime.new_from_unix_utc(mod))
+add(t+"/pl/a.txt", 100); add(t+"/pl/b/c.txt", 300); add(t+"/pl/gone.txt", 400)
+bf.add_application("https://example.com/x", "test", "test %u")
+open(t+"/recent.xbel","wb").write(bf.to_data())
+PY
+    chmod 600 "$t/recent.xbel"
+    check "recent order, skips missing and non-file" "$("$me" recent list | cut -f1 | sed "s|$t/pl/||" | tr '\n' ' ')" "b/c.txt a.txt "
+    check "recent cap" "$("$me" recent list 1 | wc -l)" "1"
+    "$me" recent add "$t/pl/Proj #1 % ✨"
+    check "recent add goes first" "$("$me" recent list | head -1 | cut -f1)" "$t/pl/Proj #1 % ✨"
+    "$me" recent remove "$t/pl/a.txt"
+    check "recent remove" "$("$me" recent list | grep -c 'a.txt')" "0"
+    check "recent keeps other entries" "$(grep -c 'example.com' "$t/recent.xbel")" "1"
+    check "recent keeps mode" "$(stat -c %a "$t/recent.xbel")" "600"
+    # a GLib writer racing ours: the file stays loadable and its entry survives
+    ( for i in $(seq 20); do python3 -I -c "
+from gi.repository import GLib; import sys
+bf=GLib.BookmarkFile(); bf.load_from_file(sys.argv[1]); bf.add_application('file:///race/$i','r','r %u')
+open(sys.argv[1]+'.tmp','wb').write(bf.to_data())
+import os; os.replace(sys.argv[1]+'.tmp', sys.argv[1])" "$t/recent.xbel"; done ) &
+    for i in $(seq 20); do "$me" recent add "$t/pl/b/c.txt"; done; wait
+    check "recent file valid after a race" "$(python3 -I -c "from gi.repository import GLib; import sys; b=GLib.BookmarkFile(); b.load_from_file(sys.argv[1]); print('ok')" "$t/recent.xbel")" "ok"
+    # ---- places: starred ----
+    "$me" starred add "$t/pl/a.txt" "$t/pl/b" "$t/pl/a.txt"
+    check "starred no duplicates" "$(sort "$t/state/starred" | uniq -d | wc -l)" "0"
+    "$me" starred add "$t/pl/missing"
+    check "starred list skips missing" "$("$me" starred list | cut -f1 | sed "s|$t/pl/||" | sort | tr '\n' ' ')" "a.txt b "
+    "$me" starred remove "$t/pl/a.txt"
+    check "starred remove" "$("$me" starred list | grep -c 'a.txt')" "0"
+    # ---- places: bookmarks ----
+    B=$t/cfg/gtk-3.0/bookmarks
+    "$me" bookmarks pin "$t/pl/b"
+    check "bookmarks file created" "$(cat "$B")" "$(python3 -I -c "from gi.repository import GLib; import sys; print(GLib.filename_to_uri(sys.argv[1], None))" "$t/pl/b")"
+    l=$(cat "$B"); printf 'sftp://host/srv Server\n%s My B\n' "$l" | head -c -1 >"$B"; chmod 640 "$B"   # no trailing newline
+    "$me" bookmarks pin "$t/pl/Proj #1 % ✨" "Projects ✨"
+    "$me" bookmarks pin "$t/pl/b"
+    check "bookmarks pin keeps others, no dup" "$(cut -d' ' -f2- "$B" | tr '\n' '|')" "Server|My B|Projects ✨|"
+    check "bookmarks keeps mode" "$(stat -c %a "$B")" "640"
+    "$me" bookmarks move "$t/pl/Proj #1 % ✨" -1
+    check "bookmarks move up" "$(cut -d' ' -f2- "$B" | tr '\n' '|')" "Server|Projects ✨|My B|"
+    "$me" bookmarks rename "$t/pl/b" ""
+    check "bookmarks rename to none" "$(sed -n 3p "$B" | grep -c ' ')" "0"
+    "$me" bookmarks unpin "$t/pl/Proj #1 % ✨"
+    check "bookmarks unpin" "$(wc -l <"$B")" "2"
+    mv "$B" "$t/cfg/real-bookmarks"; ln -s ../real-bookmarks "$B"; "$me" bookmarks pin "$t/pl"   # dotfiles-style symlink
+    check "bookmarks symlink kept" "$(test -L "$B" && echo link)" "link"
+    check "bookmarks written through the link" "$(grep -c "pl$" "$t/cfg/real-bookmarks")" "1"
+    # ---- places: moved ----
+    "$me" starred add "$t/pl/b/c.txt"; "$me" bookmarks pin "$t/pl/b" B2 2>/dev/null
+    mv "$t/pl/b" "$t/pl/b2"; "$me" placesmoved "$t/pl/b" "$t/pl/b2"
+    check "moved: starred child follows" "$(grep -c "^$t/pl/b2/c.txt$" "$t/state/starred")" "1"
+    check "moved: bookmark follows" "$(grep -c 'pl/b2' "$B")" "1"
+    check "moved: recent follows" "$("$me" recent list | grep -c 'pl/b2/c.txt')" "1"
+    # ---- speed: 1,000 entries ----
+    cp "$HOME/.local/share/recently-used.xbel" "$t/big.xbel" 2>/dev/null && { s=$(date +%s%N); HF_RECENT=$t/big.xbel "$me" recent list >/dev/null; check "recent list of the real history < 300 ms" "$(( ($(date +%s%N)-s)/1000000 < 300 ))" "1"; }
+    unset HF_RECENT HF_STARRED XDG_CONFIG_HOME
     exit $fail ;;
 *) echo "usage: see the header of $0" >&2; exit 2 ;;
 esac

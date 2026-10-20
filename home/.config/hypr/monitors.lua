@@ -3,7 +3,7 @@
 -- External monitors are matched by description, so they keep their settings on any port.
 
 hl.monitor({ output = "eDP-1", mode = "1920x1200@144.00", position = "0x1080", scale = 1, transform = 0 })
-hl.monitor({ output = "desc:LG Electronics LG ULTRAGEAR 0x00019303", mode = "1920x1080@143.98", position = "0x0", scale = 1, transform = 0 })
+hl.monitor({ output = "desc:LG Electronics LG FULL HD 0x01010101", mode = "1920x1080@74.97", position = "0x0", scale = 1, transform = 0 })
 
 -- Primary display (built-in): workspace 1 opens here, the cursor starts here.
 hl.workspace_rule({ workspace = "1", monitor = "eDP-1", default = true })

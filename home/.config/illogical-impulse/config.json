@@ -111,7 +111,7 @@
             "radius": 30,
             "tree": "{\"t\":\"leaf\",\"id\":1,\"img\":\"\"}"
         },
-        "enableWallpaperPreview": false,
+        "enableWallpaperPreview": true,
         "hideWhenFullscreen": true,
         "lockWall": "@HOME@/.cache/quickshell/presets/assets/himeko/HNRCja-aMAA6JdE.jpg",
         "parallax": {
@@ -187,7 +187,7 @@
                 "styleLocked": "pixel",
                 "x": 828,
                 "y": 720,
-                "z": 32
+                "z": 36
             },
             "customImage": {
                 "enable": true,
@@ -238,7 +238,7 @@
                 "sizeMode": "1x3",
                 "x": 744,
                 "y": 60,
-                "z": 11
+                "z": 35
             },
             "menuHidden": [
             ],
@@ -400,7 +400,7 @@
             "maxWidth": 280,
             "minWidth": 100,
             "onlyTitle": false,
-            "preferredPlayer": "",
+            "preferredPlayer": "ytmusic",
             "showLyrics": false
         },
         "resources": {
@@ -475,7 +475,7 @@
             ],
             "showAppIcons": true,
             "showNumberDelay": 300,
-            "shown": 5,
+            "shown": 3,
             "style": "default",
             "useNerdFont": false
         }
