@@ -14,6 +14,16 @@ Rectangle {
     property string renamingPin: ""                 // pinned folder whose label is being edited inline
     Component.onCompleted: Fs.checkPins()
     // Asks the disk, not the last check: a drive can come back without the device list changing (LUKS, network)
+    // A folder dropped between pins: pin it there (only folders: a test on disk first)
+    function pinDrop(path, at) {
+        Fs.dragTarget = "";
+        if (!path) return Fs.toast("Only folders can be pinned", false);
+        Fs.run(["test", "-d", path], (t, notDir) => {
+            if (notDir) return Fs.toast("Only folders can be pinned", false);
+            Fs.pin(path, at);
+            Fs.toast("Pinned “" + path.slice(path.lastIndexOf("/") + 1) + "”", false);
+        });
+    }
     function openPin(pin) {
         if (pin.network) return root.openAddress(pin.uri);
         Fs.run(["test", "-d", pin.path], (t, missing) => {
@@ -102,6 +112,7 @@ Rectangle {
                     icon: modelData.icon; label: modelData.name; badge: modelData.badge ?? 0
                     active: modelData.path !== "" && modelData.path === root.activePlace
                     rail: root.rail
+                    dropPath: modelData.path.startsWith("/") ? modelData.path : ""   // Home, Trash (not Recent, Starred, Network)
                     onClicked: root.open(modelData.path)
                 }
             }
@@ -118,11 +129,15 @@ Rectangle {
                 delegate: PlaceRow {
                     id: pinRow
                     required property var modelData
+                    required property int index
                     Layout.fillWidth: true
                     icon: modelData.network ? Fs.netIcon(modelData.uri) : Fs.pinIcon(modelData.path, Fs.dirs); label: modelData.name; rail: root.rail
                     dim: !modelData.exists
                     renaming: root.renamingPin === modelData.key
                     active: modelData.path !== "" && modelData.path === root.activePlace
+                    dropPath: modelData.network ? Fs.netPathOf(modelData.uri, Fs.netMounts) : modelData.exists ? modelData.path : ""
+                    PinGap { at: pinRow.index; y: -6 }
+                    PinGap { at: pinRow.index + 1; y: pinRow.height - 6; visible: pinRow.index === Fs.pins.length - 1 }
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     onClicked: (m) => {
                         if (m.button === Qt.RightButton) { const p = mapToItem(root, m.x, m.y); root.pinMenu(modelData.key, p.x, p.y); }
@@ -144,6 +159,7 @@ Rectangle {
                     active: modelData.mount !== "" && root.tab.path.startsWith(modelData.mount)
                     trailingIcon: modelData.mount ? "eject" : ""
                     onTrailingClicked: Fs.eject(modelData.dev)
+                    dropPath: modelData.mount
                     onClicked: modelData.mount ? root.open(modelData.mount) : Fs.mount(modelData.dev, () => {})
                 }
             }
@@ -158,6 +174,7 @@ Rectangle {
                     active: modelData.path === root.activePlace
                     trailingIcon: modelData.canUnmount ? "eject" : ""; trailingTip: "Unmount"
                     onTrailingClicked: Fs.unmount(modelData.uri, false)
+                    dropPath: modelData.path
                     onClicked: root.open(modelData.path)
                 }
             }
@@ -194,6 +211,21 @@ Rectangle {
         font.family: Theme.font; font.pixelSize: 12; font.weight: 600; font.letterSpacing: 0.4
     }
 
+    // Between two pins: a folder dropped here is pinned at that spot (a line marks it)
+    component PinGap: DropArea {
+        property int at
+        x: 0; width: parent ? parent.width : 0; height: 12; z: 2
+        keys: ["text/uri-list"]
+        onEntered: (drag) => { if (drag.urls.length === 1) Fs.dragTarget = "pin:" + at; else drag.accepted = false; }
+        onExited: if (Fs.dragTarget === "pin:" + at) Fs.dragTarget = ""
+        onDropped: (drop) => { root.pinDrop(Fs.dropPaths(drop.urls).paths[0] ?? "", at); drop.accept(Qt.LinkAction); }
+        Rectangle {
+            visible: Fs.dragTarget === "pin:" + parent.at
+            anchors.verticalCenter: parent.verticalCenter
+            x: 14; width: parent.width - 28; height: 2; radius: 1
+            color: Theme.primary
+        }
+    }
     component PlaceRow: MouseArea {
         id: row
         onActiveChanged: if (active) root.activeRow = row
@@ -207,6 +239,8 @@ Rectangle {
         property string trailingTip: "Eject"
         property bool dim: false            // a pinned folder that isn't there (unmounted drive)
         property bool renaming: false
+        property string dropPath: ""        // drops go into this folder (Fs.trashDir: to Trash); "" takes none
+        readonly property bool dropHover: dropPath !== "" && Fs.dragTarget === dropPath
         signal trailingClicked()
         signal renamed(string name)
         signal renameCancelled()
@@ -219,6 +253,16 @@ Rectangle {
             anchors.leftMargin: row.rail ? 4 : 0; anchors.rightMargin: row.rail ? 4 : 0
             radius: height / 2
             color: !row.active && row.containsMouse ? Theme.hover : "transparent"
+            border.width: row.dropHover ? 2 : 0
+            border.color: Theme.primary
+        }
+        DropArea {
+            anchors.fill: parent
+            enabled: row.dropPath !== ""
+            keys: ["text/uri-list"]
+            onEntered: (drag) => { if (Fs.dragPaths.indexOf(row.dropPath) >= 0) drag.accepted = false; else Fs.dragTarget = row.dropPath; }
+            onExited: if (Fs.dragTarget === row.dropPath) Fs.dragTarget = ""
+            onDropped: (drop) => { Fs.dropOn(row.dropPath, drop.urls); drop.accept(Qt.CopyAction); }
         }
         RowLayout {
             anchors.fill: parent

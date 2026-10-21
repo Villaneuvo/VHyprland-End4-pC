@@ -4,7 +4,7 @@
   recent add PATH | remove PATH...
   starred list                 -> path isDir size mtime (existing only)
   starred add|remove PATH...
-  bookmarks pin PATH [LABEL] | unpin PATH | rename PATH LABEL | move PATH -1|1   (GTK's bookmarks file;
+  bookmarks pin PATH [LABEL] [--at N] | unpin PATH | rename PATH LABEL | move PATH -1|1   (GTK's bookmarks file;
                                  PATH may also be a network address, sftp://host/dir)
   servers list | add ADDRESS | remove ADDRESS   -> the servers you connected to (Nautilus' history), newest first
   moved OLD NEW [OLD NEW...]   -> stars, pins and recent entries follow renames/moves
@@ -253,8 +253,15 @@ def bookmarks(op, args):
     lines = load_bookmarks()
     i = find_pin(lines, args[0])
     if op == "pin":
+        at = None
+        if "--at" in args[1:]:   # dropped between pins: N = position among the shown pins
+            k = args.index("--at", 1)
+            at, args = int(args[k + 1]), args[:k] + args[k + 2:]
         if i < 0:
-            save_bookmarks(lines + [pin_line(args[0], args[1] if len(args) > 1 else "")])
+            new = pin_line(args[0], args[1] if len(args) > 1 else "")
+            shown = [j for j, line in enumerate(lines) if pin_key(line.partition(" ")[0]) is not None]
+            where = shown[at] if at is not None and at < len(shown) else len(lines)
+            save_bookmarks(lines[:where] + [new] + lines[where:])
         return
     if i < 0:
         fail(f"not pinned: {args[0]}")

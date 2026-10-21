@@ -155,7 +155,7 @@ Singleton {
     function recentAdd(path) { if (!isRemote(path)) run([ops, "recent", "add", path], null); }   // a server's file would point nowhere later
     function recentRemove(paths, cb) { places(["recent", "remove"].concat(paths), cb); }
     function setStarred(paths, on) { places(["starred", on ? "add" : "remove"].concat(paths)); }
-    function pin(path) { places(["bookmarks", "pin", path]); }
+    function pin(path, at) { places(["bookmarks", "pin", path].concat(at >= 0 ? ["--at", String(at)] : [])); }   // at: among shown pins
     function unpin(path) { places(["bookmarks", "unpin", path]); }
     function renamePin(path, label) { places(["bookmarks", "rename", path, label]); }
     function movePin(path, d) { places(["bookmarks", "move", path, String(d)]); }
@@ -174,6 +174,13 @@ Singleton {
         const m = netMountOf(path, mounts);
         if (!m) return "";
         return m.uri.replace(/\/$/, "") + "/" + path.slice(m.path.length).split("/").filter(s => s).map(s => encodeURIComponent(s)).join("/");
+    }
+    // The other way: an address's folder on a connected server, "" when it isn't connected
+    function netPathOf(address, mounts) {
+        const a = normAddress(address), m = mounts.find(x => a === normAddress(x.uri) || a.startsWith(x.uri.replace(/\/$/, "") + "/"));
+        if (!m) return "";
+        const rest = a.slice(m.uri.replace(/\/$/, "").length).split("/").filter(x => x);
+        try { return [m.path].concat(rest.map(x => decodeURIComponent(x))).join("/"); } catch (e) { return ""; }
     }
     function netCrumbs(path, mounts) {
         const m = netMountOf(path, mounts);

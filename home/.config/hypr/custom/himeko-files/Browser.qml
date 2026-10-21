@@ -605,6 +605,20 @@ FocusScope {
                                     Icon { visible: index > 0; name: "chevron_right"; size: 16; color: Theme.outline; anchors.verticalCenter: parent.verticalCenter }
                                     MouseArea {
                                         readonly property bool last: modelData.path === root.tab.path
+                                        // A crumb takes drops into its folder, lights up, and opens after a short hover
+                                        DropArea {
+                                            anchors.fill: parent
+                                            enabled: !modelData.ellipsis && modelData.path.startsWith("/")
+                                            keys: ["text/uri-list"]
+                                            onEntered: (drag) => { if (Fs.dragPaths.indexOf(modelData.path) >= 0) drag.accepted = false; else Fs.dragTarget = modelData.path; }
+                                            onExited: if (Fs.dragTarget === modelData.path) Fs.dragTarget = ""
+                                            onDropped: (drop) => { Fs.dropOn(modelData.path, drop.urls); drop.accept(Qt.CopyAction); }
+                                        }
+                                        Rectangle {
+                                            anchors.fill: parent; radius: 18; color: "transparent"; z: 2
+                                            visible: !modelData.ellipsis && Fs.dragTarget === modelData.path
+                                            border.width: 2; border.color: Theme.primary
+                                        }
                                         anchors.verticalCenter: parent.verticalCenter
                                         implicitWidth: crumbContent.implicitWidth + 20; implicitHeight: 36
                                         hoverEnabled: true
@@ -765,6 +779,19 @@ FocusScope {
                         required property int index
                         readonly property bool on: index === root.tabIndex
                         readonly property bool closable: on && root.tabs.length > 1
+                        // A drag resting on a tab switches to it; a drop goes into its folder
+                        DropArea {
+                            anchors.fill: parent
+                            keys: ["text/uri-list"]
+                            onEntered: Fs.dragTarget = "tab:" + tabItem.index
+                            onExited: if (Fs.dragTarget === "tab:" + tabItem.index) Fs.dragTarget = ""
+                            onDropped: (drop) => { if (!tabItem.modelData.virtual) Fs.dropOn(tabItem.modelData.path, drop.urls); drop.accept(Qt.CopyAction); }
+                        }
+                        Rectangle {
+                            anchors.fill: parent; radius: height / 2; color: "transparent"
+                            visible: Fs.dragTarget === "tab:" + tabItem.index
+                            border.width: 2; border.color: Theme.primary
+                        }
                         implicitWidth: 16 + tabRow.implicitWidth + (closable ? 8 : 16); implicitHeight: 44
                         hoverEnabled: true
                         acceptedButtons: Qt.LeftButton | Qt.MiddleButton
@@ -1071,6 +1098,7 @@ FocusScope {
         // Drops and drag hovers, as a pointer would do them (a real drag can't be faked off-screen)
         function dropUris(target: string, uris: string): void { Fs.dropOn(target === "trash" ? Fs.trashDir : target, uris.split("|")); }
         function dragHover(target: string): void { Fs.dragTarget = target; }
+        function pinDrop(path: string, index: int): void { sidebar.pinDrop(path, index); }
         function closeTabIpc(): void { root.closeTab(root.tabIndex); }
         function windowClosedIpc(): void { root.windowClosed(); }   // what FloatingWindow.onClosed runs
         function jobsState(): string { return JSON.stringify(Fs.jobs); }
@@ -1244,7 +1272,7 @@ FocusScope {
     Timer { id: springTimer; interval: 800; onTriggered: root.springOpen(Fs.dragTarget) }
     function springOpen(t) {
         if (t.startsWith("tab:")) tabIndex = Number(t.slice(4));
-        else if (t && t !== tab.path) tab.go(t);
+        else if (t.startsWith("/") && t !== tab.path) tab.go(t);   // not "pin:N" gaps
     }
     property bool addressHelp: false
     property var schemes: []            // what gvfs can connect to here (the address help lists only those)

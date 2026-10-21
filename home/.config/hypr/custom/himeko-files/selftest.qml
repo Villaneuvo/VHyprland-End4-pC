@@ -23,6 +23,8 @@ ShellRoot {
         check("netMountOf: a longer name isn't inside", Fs.netMountOf(mts[0].path + "X", mts), null);
         check("netAddress: encodes the rest", Fs.netAddress(mts[0].path + "/docs/a b#1", mts), "smb://nas/share/docs/a%20b%231");
         check("netAddress: root", Fs.netAddress(mts[1].path, mts), "dav://127.0.0.1:18080/");
+        check("netPathOf: an address on a connected server", Fs.netPathOf("dav://127.0.0.1:18080/sub/a%20b", mts), mts[1].path + "/sub/a b");
+        check("netPathOf: not connected", Fs.netPathOf("sftp://other/x", mts), "");
         check("netCrumbs", Fs.netCrumbs(mts[0].path + "/docs/<b>x", mts).map(c => c.label), ["share on nas", "docs", "<b>x"]);
         check("netIcon", ["smb://a/b", "sftp://h/", "ssh://h", "ftp://h", "davs://h", "mtp://p", "nfs://h/x", "zzz://h"].map(u => Fs.netIcon(u)),
               ["folder_shared", "dns", "dns", "dns", "cloud", "smartphone", "dns", "lan"]);

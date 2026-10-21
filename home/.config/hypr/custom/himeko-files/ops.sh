@@ -566,6 +566,10 @@ BUS
     echo '{"cancel": true}' | "$me" transfer copy "$C/b" "$C/a/f.txt" >"$C/o5"
     check "conflict: cancel stops, nothing written" "$(tail -1 "$C/o5")$(ls -A "$C/b" | grep -c himeko-part)" '{"cancelled": true}0'
     unset XDG_DATA_HOME
+    export XDG_CONFIG_HOME=$t/cfg3; mkdir -p "$t/p1" "$t/p2" "$t/p3"
+    "$me" bookmarks pin "$t/p1"; "$me" bookmarks pin "$t/p2"; "$me" bookmarks pin "$t/p3" --at 1
+    check "bookmarks pin --at" "$(sed "s|file://$t/||" "$t/cfg3/gtk-3.0/bookmarks" | tr '\n' ' ')" "p1 p3 p2 "
+    unset XDG_CONFIG_HOME
     exit $fail ;;
 *) echo "usage: see the header of $0" >&2; exit 2 ;;
 esac
