@@ -328,10 +328,10 @@ Singleton {
             else if (o.progress) setJob(id, { bytes: o.progress.bytes });
             else if (o.undo) log.push(o.undo);
             else if (o.made) made.push(o.made);
-            else if (o.failed) failedItems.push(o.failed);
-            else if (o.done) end({ state: failedItems.length ? "failed" : "done" });
+            else if (o.done) end({ state: failedItems.length ? "failed" : "done" });   // before "failed": the done line counts them too
             else if (o.cancelled) end({ state: "cancelled" });
             else if (o.error) { end({ state: "failed", error: o.error }); failed(o.error); }
+            else if (typeof o.failed === "object") failedItems.push(o.failed);
         };
         p.exitCb = () => { if (!ended) end({ state: "failed", error: "The transfer stopped unexpectedly" }); };
         jobProcs[id] = p;

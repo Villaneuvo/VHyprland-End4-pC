@@ -61,7 +61,7 @@ FocusScope {
         if (focusIt !== false) tabIndex = tabs.length - 1;
     }
     function closeTab(i) {
-        if (tabs.length === 1) return Qt.quit();
+        if (tabs.length === 1) return closeWindow();
         const t = tabs[i];
         tabs = tabs.filter((x, j) => j !== i);
         if (tabIndex >= tabs.length) tabIndex = tabs.length - 1;
@@ -148,6 +148,7 @@ FocusScope {
         function onFailed(text) { toast.show(text, false, true); }
         function onCreated(path) { root.tab.selectPath(path); root.renamingPath = path; }
         function onNetAsk(req) { root.asks = root.asks.concat([req]); }
+        function onJobsActiveChanged() { if (root.quitting && !Fs.jobsActive) Qt.quit(); }
         function onNetAskGone(owner) { root.asks = root.asks.filter(r => r.owner !== owner); }
         function onTransferAsk(req) { root.conflicts = root.conflicts.concat([req]); }
         function onTransferAskGone(owner) { root.conflicts = root.conflicts.filter(r => r.owner !== owner); }
@@ -668,6 +669,17 @@ FocusScope {
                     }
                 }
                 Glass {
+                    id: jobsGlass
+                    visible: Fs.jobs.length > 0
+                    backdrop: view
+                    implicitWidth: 52; implicitHeight: 52
+                    Loader {   // nothing exists until a job does
+                        anchors.centerIn: parent
+                        active: jobsGlass.visible
+                        sourceComponent: JobsButton { onToggled: root.jobsOpen = !root.jobsOpen }
+                    }
+                }
+                Glass {
                     backdrop: view
                     implicitWidth: 52; implicitHeight: 52
                     IconButton { anchors.centerIn: parent; icon: "search"; tip: "Search (Ctrl+F)"; active: root.searching; onClicked: { root.searching = !root.searching; root.editingPath = false; if (!root.searching) { root.tab.query = ""; view.forceActiveFocus(); } } }
@@ -1021,6 +1033,9 @@ FocusScope {
         function netAddressHelp(on: bool): void { root.addressHelp = on; }
         function newFolder(): void { Fs.newFolder(root.tab.path); }
         function pasteHere(paths: string): void { Fs.transfer("copy", root.tab.path, paths.split("|")); }
+        function jobsOpen(on: bool): void { root.jobsOpen = on; }
+        function closeTabIpc(): void { root.closeTab(root.tabIndex); }
+        function windowClosedIpc(): void { root.windowClosed(); }   // what FloatingWindow.onClosed runs
         function jobsState(): string { return JSON.stringify(Fs.jobs); }
         function cancelJob(id: int): void { Fs.cancelJob(id); }
         function conflictAnswer(choice: string, all: bool): void { root.answerConflict(choice === "cancel" ? { cancel: true } : { choice: choice, all: all }); }
@@ -1140,6 +1155,35 @@ FocusScope {
         onLoaded: item.forceActiveFocus()
     }
 
+    // ---- jobs: the operations popover, and closing while they run ----
+    property bool jobsOpen: false
+    onJobsOpenChanged: if (jobsOpen) { const p = jobsGlass.mapToItem(root, jobsGlass.width, jobsGlass.height + 8); jobsPop.x = Math.max(8, p.x - jobsPop.width); jobsPop.y = p.y; }
+    function jobSubtitle(j) {
+        if (j.state === "done") return "Done";
+        if (j.state === "cancelled") return "Cancelled";
+        if (j.state === "failed")
+            return j.error || (j.kind === "move" ? "Moved " : "Copied ") + j.made.length + " of " + j.names.length + (j.names.length === 1 ? " item" : " items");
+        return j.kind === "copy" || j.kind === "move" ? Fs.jobProgress(j.bytes, j.total, Date.now() - j.started) : "";
+    }
+    // Last tab, Ctrl+W: running jobs ask first; cancelling them lets transfer.py remove its part files
+    function closeWindow() {
+        if (!Fs.jobsActive) return Qt.quit();
+        Fs.netAsk({ ask: "question", title: "Operations are running",
+                    message: Fs.jobs.filter(j => j.state === "running" || j.state === "scanning").map(j => Fs.jobTitle(j)).join("\n"),
+                    choices: ["Cancel Them and Close", "Keep Open"],
+                    reply: (a) => { if (a.choice === 0) { Fs.jobs.forEach(j => Fs.cancelJob(j.id)); root.quitWhenIdle(); } } });
+    }
+    property bool quitting: false
+    function quitWhenIdle() { quitting = true; if (!Fs.jobsActive) Qt.quit(); }
+    // The compositor closed the window: nobody can answer any more, so jobs finish on their own (a taken name keeps
+    // both) and the app quits after the last one
+    function windowClosed() {
+        if (!Fs.jobsActive) return Qt.quit();
+        Fs.unattended = true;
+        conflicts.slice().forEach(() => answerConflict({ choice: "keep", all: true }));
+        quitWhenIdle();
+    }
+
     // ---- name conflicts from transfers, one at a time (ConflictDialog shows conflicts[0]) ----
     property var conflicts: []
     function answerConflict(a) {
@@ -1150,6 +1194,80 @@ FocusScope {
     }
     property bool addressHelp: false
     property var schemes: []            // what gvfs can connect to here (the address help lists only those)
+
+    // ---- the operations popover ----
+    MouseArea {
+        anchors.fill: parent
+        visible: root.jobsOpen
+        acceptedButtons: Qt.AllButtons
+        onPressed: root.jobsOpen = false
+    }
+    Glass {
+        id: jobsPop
+        visible: root.jobsOpen && Fs.jobs.length > 0
+        backdrop: view
+        tint: Theme.alpha(Theme.surfaceHigh, 0.97)
+        radius: 18
+        width: Math.min(420, root.width - 16)
+        height: Math.min(jobsCol.implicitHeight + 16, root.height - y - 16)
+        MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons }
+        Flickable {
+            anchors.fill: parent; anchors.margins: 8
+            contentHeight: jobsCol.implicitHeight
+            clip: true
+            Column {
+                id: jobsCol
+                width: parent.width
+                spacing: 2
+                Repeater {
+                    model: Fs.jobs
+                    delegate: Rectangle {
+                        id: jobRow
+                        required property var modelData
+                        readonly property bool live: modelData.state === "running" || modelData.state === "scanning"
+                        width: jobsCol.width
+                        implicitHeight: jobInfo.implicitHeight + 24
+                        radius: 12
+                        color: Theme.alpha(Theme.text, 0.05)
+                        Column {
+                            id: jobInfo
+                            anchors { left: parent.left; right: jobBtn.left; verticalCenter: parent.verticalCenter; leftMargin: 14; rightMargin: 8 }
+                            spacing: 3
+                            Text { width: parent.width; text: Fs.jobTitle(jobRow.modelData); textFormat: Text.PlainText; elide: Text.ElideMiddle; color: Theme.text; font.family: Theme.font; font.pixelSize: 14; font.weight: 600 }
+                            Text { width: parent.width; visible: text !== ""; text: root.jobSubtitle(jobRow.modelData); textFormat: Text.PlainText; elide: Text.ElideRight; color: jobRow.modelData.state === "failed" ? Theme.error : Theme.textDim; font.family: Theme.font; font.pixelSize: 12 }
+                            Repeater {
+                                model: jobRow.modelData.state === "failed" ? jobRow.modelData.failed.slice(0, 3) : []
+                                delegate: Text {
+                                    required property var modelData
+                                    width: jobInfo.width
+                                    text: modelData.path.slice(modelData.path.lastIndexOf("/") + 1) + " — " + modelData.error
+                                    textFormat: Text.PlainText; elide: Text.ElideMiddle
+                                    color: Theme.textDim; font.family: Theme.font; font.pixelSize: 12
+                                }
+                            }
+                            Rectangle {
+                                visible: jobRow.live
+                                width: parent.width; height: 4; radius: 2
+                                color: Theme.alpha(Theme.text, 0.12)
+                                Rectangle {
+                                    height: parent.height; radius: 2; color: Theme.primary
+                                    width: jobRow.modelData.total ? parent.width * Math.min(1, jobRow.modelData.bytes / jobRow.modelData.total) : parent.width * 0.25
+                                }
+                            }
+                        }
+                        IconButton {
+                            id: jobBtn
+                            anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: 6 }
+                            visible: jobRow.live ? (jobRow.modelData.kind === "copy" || jobRow.modelData.kind === "move") : jobRow.modelData.state !== "done"
+                            icon: "close"; iconSize: 18; implicitWidth: 36; implicitHeight: 36
+                            tip: jobRow.live ? "Cancel" : "Dismiss"
+                            onClicked: jobRow.live ? Fs.cancelJob(jobRow.modelData.id) : Fs.dismissJob(jobRow.modelData.id)
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // ---- gvfs asks: password or question, one at a time ----
     property var asks: []

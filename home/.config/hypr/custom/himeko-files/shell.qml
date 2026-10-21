@@ -11,6 +11,7 @@ ShellRoot {
         color: "transparent"
         implicitWidth: 1248
         implicitHeight: 788
+        onClosed: browser.windowClosed()   // jobs still running finish first
         Browser {
             id: browser
             anchors.fill: parent
