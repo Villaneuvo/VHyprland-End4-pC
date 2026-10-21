@@ -16,6 +16,7 @@ Singleton {
     signal toast(string text, bool undoable)
     signal failed(string text)
     signal created(string path)          // new folder etc.: the view selects it and starts renaming
+    signal touched()                     // a rename done here: listings that don't watch the disk (servers) list again
 
     // ---- run a command, get its stdout ----
     Component {
@@ -44,6 +45,7 @@ Singleton {
     function run(cmd, cb) {
         const p = procComp.createObject(root, { command: cmd, cb: cb });
         p.running = true;
+        return p;
     }
     function lines(text) { return text.split("\n").filter(l => l.length > 0); }
 
@@ -165,7 +167,8 @@ Singleton {
     readonly property string gvfsRoot: Quickshell.env("XDG_RUNTIME_DIR") + "/gvfs"
     property var netMounts: []           // [{ name, uri, path, canUnmount }]
     signal disconnected(var mount)       // a mount left (unmounted here, in Nautilus, or the server went away)
-    signal netAsk(var req)               // gvfs asks (password, question): the ask object + reply(answer)
+    signal netAsk(var req)               // gvfs asks (password, question): the ask object + reply(answer) + owner
+    signal netAskGone(int owner)         // that helper ended (killed, crashed, done): its asks can't be answered
     function isRemote(path) { return netMountOf(path, netMounts) !== null; }
     function displayPath(path) { return isRemote(path) ? netAddress(path, netMounts) : path.replace(home, "~"); }
     function netMountOf(path, mounts) { return mounts.find(m => path === m.path || path.startsWith(m.path + "/")) ?? null; }
@@ -185,6 +188,8 @@ Singleton {
     readonly property var netIcons: ({ smb: "folder_shared", sftp: "dns", ssh: "dns", ftp: "dns", ftps: "dns", nfs: "dns", afp: "dns",
                                        dav: "cloud", davs: "cloud", mtp: "smartphone", gphoto2: "photo_camera" })
     function netIcon(uri) { return netIcons[uri.slice(0, Math.max(0, uri.indexOf(":"))).toLowerCase()] ?? "lan"; }
+    // ftp://me:secret@host → ftp://me@host: a typed password would sit in argv and the servers history; gvfs asks instead
+    function withoutPassword(uri) { return uri.replace(/^([a-z][a-z0-9+.-]*:\/\/)([^/@:]*):[^/]*@/i, "$1$2@"); }
     function isAddress(text) { return /^[a-z][a-z0-9+.-]*:\/\//i.test(text) && !/^file:/i.test(text); }
     function isServerAddress(uri) { return /^smb:\/\/[^/]+\/?$/i.test(uri); }   // a computer: its shares are a list
     function netHost(uri) {
@@ -211,12 +216,13 @@ Singleton {
         stdout: SplitParser { onRead: (line) => netBurst.restart() }
     }
     Timer { id: netBurst; interval: 150; onTriggered: root.refreshMounts() }
-    function refreshMounts() {
+    function refreshMounts(done) {
         run([ops, "net", "mounts"], (text) => {
             const list = root.lines(text).map(l => { const f = l.split("\t"); return { name: f[0], uri: f[1], path: f[2], canUnmount: f[3] === "1" }; });
             const gone = root.netMounts.filter(m => !list.some(n => n.path === m.path));
             if (JSON.stringify(list) !== JSON.stringify(root.netMounts)) root.netMounts = list;
             gone.forEach(m => root.disconnected(m));
+            if (done) done();
         });
     }
 
@@ -225,17 +231,19 @@ Singleton {
         id: talkComp
         Process {
             property var lineCb
+            property int owner
             stdinEnabled: true
             stdout: SplitParser { onRead: (line) => lineCb(line) }
-            onExited: destroy()
+            onExited: { root.netAskGone(owner); destroy(); }
         }
     }
+    property int talks: 0
     function talk(args, onResult) {
-        const p = talkComp.createObject(root, { command: [ops, "net"].concat(args) });
+        const owner = ++talks, p = talkComp.createObject(root, { command: [ops, "net"].concat(args), owner: owner });
         p.lineCb = (line) => {
             let o;
             try { o = JSON.parse(line); } catch (e) { return; }
-            if (o.ask) root.netAsk(Object.assign(o, { reply: (a) => p.write(JSON.stringify(a) + "\n") }));
+            if (o.ask) root.netAsk(Object.assign(o, { owner: owner, reply: (a) => p.write(JSON.stringify(a) + "\n") }));
             else onResult(o);
         };
         p.running = true;
@@ -245,8 +253,7 @@ Singleton {
         talk(["mount", address], (o) => {
             if (o.path) {
                 if (remember) places(["servers", "add", address]);
-                refreshMounts();
-                cb(o.path);
+                refreshMounts(() => cb(o.path));   // open it once we know it's a server (no thumbnails, no counts)
             } else if (o.error && o.error !== "Cancelled") failed(o.error);
         });
     }
@@ -261,6 +268,12 @@ Singleton {
                               choices: ["Unmount Anyway", "Cancel"], reply: (a) => { if (a.choice === 0) root.unmount(uri, true); } });
             } else if (code) root.failed(err.trim() || "Couldn't unmount");
         });
+    }
+    // A server's folder, listed by a process (returned, so a stuck one can be stopped). Qt's own folder listing
+    // waits on the disk in the window's thread: a server that stops answering would freeze, then kill, the window
+    function listDir(dir, cb) {
+        return run(["find", dir, "-mindepth", "1", "-maxdepth", "1", "-printf", "%p\\t%Y\\t%s\\t%T@\\n"], (text) =>
+            cb(placeItems(lines(text).map(l => { const f = l.split("\t"); return [f[0], f[1] === "d" ? 1 : 0, f[2], Math.floor(f[3])].join("\t"); }).join("\n"))));
     }
     function serversList(cb) { run([ops, "servers", "list"], (text) => cb(lines(text))); }
     function serverRemove(uri) { places(["servers", "remove", uri]); }
@@ -474,6 +487,7 @@ Singleton {
     function pumpThumbs() {
         while (thumbBusy < 3 && thumbQueue.length > 0) {
             const q = thumbQueue.shift();
+            if (isRemote(q.path)) continue;   // queued before we knew it was on a server: never download for a picture
             thumbBusy++;
             run([ops, "thumb", q.path, thumbPath(q.path), "256", q.kind], (t, code) => {
                 thumbBusy--;
@@ -546,6 +560,7 @@ Singleton {
                 if (stillThere === 0) return failed("“" + name + "” already exists");
                 undoAction = { kind: "rename", from: target, to: path };
                 placesMoved([[path, target]]);
+                root.touched();
                 if (cb) cb(target);
             });
         });

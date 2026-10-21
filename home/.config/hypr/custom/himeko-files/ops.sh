@@ -501,8 +501,23 @@ import os; os.replace(sys.argv[1]+'.tmp', sys.argv[1])" "$t/recent.xbel"; done )
     if command -v dbus-run-session >/dev/null && [ -x /usr/libexec/gvfsd-dav ]; then
         mkdir -p "$t/rt" "$t/dav/sub" "$t/bus"; chmod 700 "$t/rt"; echo hello >"$t/dav/a.txt"; echo up >"$t/up.txt"
         ln -s /usr/share/dbus-1/services/org.gtk.vfs.Daemon.service /usr/share/dbus-1/services/org.gtk.vfs.Metadata.service "$t/bus/"
-        sed "s|<standard_session_servicedirs */>|<servicedir>$t/bus</servicedir>|" /usr/share/dbus-1/session.conf >"$t/bus.conf"
+        # Our own config, no includes: nothing from the system's bus setup (keyring, portals, snaps) can come in
+        cat >"$t/bus.conf" <<BUS
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>session</type>
+  <keep_umask/>
+  <listen>unix:tmpdir=$t</listen>
+  <auth>EXTERNAL</auth>
+  <servicedir>$t/bus</servicedir>
+  <policy context="default"><allow send_destination="*" eavesdrop="true"/><allow eavesdrop="true"/><allow own="*"/></policy>
+</busconfig>
+BUS
         keyring=$(stat -c %Y "$HOME/.local/share/keyrings/login.keyring" 2>/dev/null)
+        busok=$(grep -c '<servicedir>' "$t/bus.conf")$(grep -c '<include' "$t/bus.conf")
+        check "private bus: only gvfs can start there (one service dir, no includes)" "$busok" "10"
+    fi
+    if command -v dbus-run-session >/dev/null && [ -x /usr/libexec/gvfsd-dav ] && [ "${busok:-}" = 10 ]; then
         port=$((20000 + RANDOM % 20000))
         python3 -I "$(dirname -- "$0")/testdav.py" "$t/dav" "$port" tester secret & dav=$!; sleep 0.5
         env XDG_RUNTIME_DIR="$t/rt" dbus-run-session --config-file="$t/bus.conf" -- bash -c '

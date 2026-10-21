@@ -18,8 +18,7 @@ FocusScope {
     function answer(a) {
         const r = req;
         pass.text = "";
-        r.reply(a);
-        done();
+        try { r.reply(a); } finally { done(); }   // a helper that just died can't take the answer: close anyway
     }
     function connectNow() { answer({ user: user.text, domain: domain.text, password: pass.text, anonymous: anonymous, save: remember }); }
     function cancel() { answer({ cancel: true }); }
@@ -43,9 +42,11 @@ FocusScope {
         if (i >= 0) choose(i);
     }
 
+    // Modal: no key reaches the window behind (Ctrl+W, F5, Alt+Left would pull the folder away from under the dialog)
     Keys.onPressed: (e) => {
-        if (e.key === Qt.Key_Escape) { choosing ? choosing = false : cancel(); e.accepted = true; }
-        else if (!question && (e.key === Qt.Key_Return || e.key === Qt.Key_Enter)) { connectNow(); e.accepted = true; }
+        if (e.key === Qt.Key_Escape) choosing ? choosing = false : cancel();
+        else if (!question && (e.key === Qt.Key_Return || e.key === Qt.Key_Enter)) connectNow();
+        e.accepted = true;
     }
     Component.onCompleted: (user.show && !user.text ? user : pass.show ? pass : root).forceActiveFocus()
 

@@ -32,6 +32,8 @@ ShellRoot {
         check("netPinName", [Fs.netPinName("sftp://host/srv/data", ""), Fs.netPinName("sftp://host/", ""), Fs.netPinName("smb://nas/share", "Office"),
               Fs.netPinName("smb://nas/My%20Docs", "")], ["data on host", "host", "Office", "My Docs on nas"]);
 
+        check("withoutPassword: a typed password never travels or gets saved", ["ftp://me:s3cret@host/x", "sftp://me@host/", "smb://nas/share", "ftp://[::1]:21/", "dav://a:b:c@h:8080/"].map(u => Fs.withoutPassword(u)),
+              ["ftp://me@host/x", "sftp://me@host/", "smb://nas/share", "ftp://[::1]:21/", "dav://a@h:8080/"]);
         // ---- places rules ----
         check("pastePairs: skipped source keeps its place", Fs.pastePairs("\n/d/y\n", ["/d/x", "/s/y"]), [["/s/y", "/d/y"]]);
         check("pastePairs: all moved", Fs.pastePairs("/d/a\n/d/b (2)\n", ["/s/a", "/t/b"]), [["/s/a", "/d/a"], ["/t/b", "/d/b (2)"]]);

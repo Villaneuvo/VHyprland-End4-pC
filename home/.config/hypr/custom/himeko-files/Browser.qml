@@ -121,7 +121,7 @@ FocusScope {
     }
     // A server address: a computer opens its share list, anything else connects (asking for a password if needed)
     function openAddress(text, remember) {
-        const a = text.trim(), t = tab;
+        const a = Fs.withoutPassword(text.trim()), t = tab;
         if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(a)) return Fs.failed("Add a protocol, like smb:// or sftp://");
         if (Fs.isServerAddress(a)) return t.go("network:" + a.replace(/\/?$/, "/"));
         Fs.toast("Connecting to “" + Fs.netHost(a) + "”…", false);
@@ -148,6 +148,7 @@ FocusScope {
         function onFailed(text) { toast.show(text, false, true); }
         function onCreated(path) { root.tab.selectPath(path); root.renamingPath = path; }
         function onNetAsk(req) { root.asks = root.asks.concat([req]); }
+        function onNetAskGone(owner) { root.asks = root.asks.filter(r => r.owner !== owner); }
         // A server went away (unmounted here or elsewhere, or dropped): tabs inside it go to Network
         function onDisconnected(m) {
             const inside = root.tabs.filter(t => t.path === m.path || t.path.startsWith(m.path + "/"));

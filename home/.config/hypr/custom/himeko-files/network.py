@@ -6,7 +6,8 @@
   unmount ADDRESS [--force] -> exit 2 when the server is busy
   browse ADDRESS            -> JSON lines: questions, {"item": {name, target, kind}}…, then {"done": true} or {"error"}
   schemes                   -> the URI schemes gvfs supports here
-Passwords only ever arrive on stdin. HF_ASK_QUESTION=1 (tests): ask a question before mounting."""
+Passwords only ever arrive on stdin. Tests: HF_ASK_QUESTION=1 asks a question before mounting; HF_SLOW_MOUNTS=SECONDS
+delays `mounts` (widens the window between a connect and the app learning about the mount)."""
 import json
 import os
 import sys
@@ -121,6 +122,9 @@ def clean(text):
 
 
 def mounts():
+    if os.environ.get("HF_SLOW_MOUNTS"):
+        import time
+        time.sleep(float(os.environ["HF_SLOW_MOUNTS"]))
     for m in Gio.VolumeMonitor.get().get_mounts():
         root = m.get_root()
         path = root.get_path()

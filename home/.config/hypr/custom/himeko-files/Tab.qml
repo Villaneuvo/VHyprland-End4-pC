@@ -27,7 +27,8 @@ QtObject {
     // Recent and Starred aren't folders: places.py lists them
     readonly property string place: path === Fs.recentPath ? "recent" : path === Fs.starredPath ? "starred" : path.startsWith("network:") ? "network" : ""
     readonly property bool virtual: place !== ""
-    readonly property bool ready: virtual ? loadedPath === path : listPath !== "" && model.status === FolderListModel.Ready
+    readonly property bool remote: !virtual && Fs.isRemote(path)   // on a server: listed by a process, see reloadRemote
+    readonly property bool ready: virtual || remote ? loadedPath === path : listPath !== "" && model.status === FolderListModel.Ready
     readonly property string name: place === "recent" ? "Recent" : place === "starred" ? "Starred"
         : place === "network" ? (path.length > 8 ? Fs.netHost(path.slice(8)) : "Network")
         : Fs.netMountOf(path, Fs.netMounts)?.path === path ? Fs.netMountOf(path, Fs.netMounts).name   // a server's top folder
@@ -35,7 +36,7 @@ QtObject {
     readonly property bool inTrash: path === Fs.trashDir || path.startsWith(Fs.trashDir + "/")
 
     property FolderListModel model: FolderListModel {
-        folder: tab.virtual || !tab.listPath ? "" : Fs.uri(tab.listPath)
+        folder: tab.virtual || tab.remote || !tab.listPath ? "" : Fs.uri(tab.listPath)
         showDirsFirst: true
         showDotAndDotDot: false
         showHidden: tab.showHidden
@@ -47,7 +48,7 @@ QtObject {
     // folder is listed through a symlink in XDG_RUNTIME_DIR, and its items get their real paths back
     property string listPath: ""
     function updateListPath() {
-        if (virtual || !/[#?]|%[0-9A-Fa-f]{2}/.test(path)) return listPath = path;
+        if (virtual || remote || !/[#?]|%[0-9A-Fa-f]{2}/.test(path)) return listPath = path;
         listPath = "";
         const asked = path, link = Fs.runtimeDir + "/dir-" + Qt.md5(path);
         Fs.run(["bash", "-c", "mkdir -p \"${2%/*}\" && ln -sfn -- \"$1\" \"$2\"", "_", path, link], () => { if (tab.path === asked) tab.listPath = link; });
@@ -56,6 +57,7 @@ QtObject {
     property var all: []
     function reload() {
         if (virtual) return reloadPlace();
+        if (remote) return reloadRemote();
         if (!listPath) return;
         const m = tab.model, list = [], real = (p) => listPath === path ? p : path + p.slice(listPath.length);
         for (let i = 0; i < m.count; i++) {
@@ -94,7 +96,21 @@ QtObject {
         if (place === "recent") Fs.recentList(done);
         else Fs.starredList(done);
     }
-    onPathChanged: { updateListPath(); if (virtual) reloadTimer.restart(); }
+    // A server's folder: one `find` per visit/F5/operation; a stalled server stalls that process, never the window
+    property var lister: null
+    function reloadRemote() {
+        const asked = path, old = lister;
+        lister = null;
+        if (old) old.running = false;
+        const p = Fs.listDir(asked, (list) => {
+            if (tab.lister !== p || tab.path !== asked) return;
+            tab.lister = null;
+            all = list;
+            if (loadedPath !== path) { loadedPath = path; loadedAt = Date.now(); }
+        });
+        lister = p;
+    }
+    onPathChanged: { updateListPath(); if (virtual || remote) reloadTimer.restart(); }
     // Changes from elsewhere: GTK's history (only while Recent is shown), stars, and our own operations (they toast)
     readonly property FileView recentWatch: FileView {
         path: tab.place === "recent" ? Fs.recentFile : ""
@@ -103,16 +119,18 @@ QtObject {
     }
     readonly property Connections placeWatch: Connections {
         target: Fs
-        enabled: tab.virtual
+        enabled: tab.virtual || tab.remote   // these don't watch the disk: list again after our own operations
         function onStarredChanged() { if (tab.place === "starred") tab.reloadTimer.restart(); }
         function onToast() { tab.reloadTimer.restart(); }
+        function onTouched() { tab.reloadTimer.restart(); }
+        function onCreated() { tab.reloadTimer.restart(); }
     }
 
     readonly property var items: {
         const q = query.trim().toLowerCase();
         const f = filter;
         const matchKind = (it) => f === "all" || it.isDir || (f === "doc" ? ["doc", "pdf", "sheet", "slides"].indexOf(Fs.kindOf(it)) >= 0 : Fs.kindOf(it) === f);
-        const list = all.filter(it => (!q || it.name.toLowerCase().indexOf(q) >= 0) && matchKind(it) && (f === "all" || !it.isDir || q));
+        const list = all.filter(it => (showHidden || !remote || !it.name.startsWith(".")) && (!q || it.name.toLowerCase().indexOf(q) >= 0) && matchKind(it) && (f === "all" || !it.isDir || q));
         const dir = sortDesc ? -1 : 1;
         const byName = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
         const cmp = {
