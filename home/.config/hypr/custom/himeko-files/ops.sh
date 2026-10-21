@@ -23,6 +23,7 @@
 #   ops.sh text FILE                     -> its first 256 KB; exit 3 (no output) when they hold a NUL byte (binary)
 #   ops.sh thumbexts                     -> extensions that have a thumbnailer, one per line
 #   ops.sh thumb SRC DST SIZE KIND       -> exit 0 when DST was written (KIND: the app's kind, image/video/…)
+#   ops.sh transfer copy|move|auto DEST SRC… -> transfer.py (progress, part files, conflicts; JSON lines)
 #   ops.sh net mounts|mount|unmount|browse|schemes … -> network.py (servers through gvfs)
 #   ops.sh recent|starred|bookmarks|servers … -> places.py (Recent, Starred, pinned folders); placesmoved OLD NEW
 # Thumbnailers, ImageMagick and ffmpeg parse untrusted files, so they run in bwrap (see sandbox).
@@ -68,6 +69,7 @@ thumbnailers() { # usable .thumbnailer files, user dir first; glycin-* start the
 cmd=${1:-}; shift || true
 case "$cmd" in
 recent|starred|bookmarks|servers) exec python3 -I "$(dirname -- "$0")/places.py" "$cmd" "$@" ;;
+transfer) exec python3 -I "$(dirname -- "$0")/transfer.py" "$@" ;;
 net) exec python3 -I "$(dirname -- "$0")/network.py" "$@" ;;
 placesmoved) exec python3 -I "$(dirname -- "$0")/places.py" moved "$@" ;;
 paste)
@@ -542,6 +544,31 @@ BUS
         check "net browse: unreachable fails fast with a message" "$(grep -c '"error"' "$t/m7")$(( $(cat "$t/m8") < 10 ))" "11"
         check "net tests leave the login keyring alone" "$(stat -c %Y "$HOME/.local/share/keyrings/login.keyring" 2>/dev/null)" "$keyring"
     fi
+    # ---- transfers: transfer.py ----
+    X=$(mktemp -d -p /tmp); mkdir -p "$t/tr/src/tree/deep" "$t/tr/dst"
+    head -c 300000 /dev/urandom >"$t/tr/src/tree/big.bin"; echo a >"$t/tr/src/tree/deep/a.txt"; ln -s deep/a.txt "$t/tr/src/tree/link"
+    "$me" transfer copy "$t/tr/dst" "$t/tr/src/tree" </dev/null >"$t/tr/o1"
+    check "transfer: total counts regular files" "$(grep -o '"total": [0-9]*' "$t/tr/o1")" '"total": 300002'
+    check "transfer: copy is exact, links stay links" "$(cmp -s "$t/tr/src/tree/big.bin" "$t/tr/dst/tree/big.bin" && readlink "$t/tr/dst/tree/link")" "deep/a.txt"
+    check "transfer: made + done" "$(grep -c "\"made\": \[\"$t/tr/src/tree\", \"$t/tr/dst/tree\"\]" "$t/tr/o1")$(tail -1 "$t/tr/o1")" '1{"done": true, "failed": 0}'
+    "$me" transfer auto "$X" "$t/tr/src/tree/deep/a.txt" </dev/null >/dev/null
+    check "transfer auto: another filesystem copies" "$(test -e "$t/tr/src/tree/deep/a.txt" && cat "$X/a.txt")" "a"
+    "$me" transfer auto "$t/tr/dst" "$t/tr/src/tree/deep" </dev/null >"$t/tr/o2"
+    check "transfer auto: same filesystem moves" "$(test -e "$t/tr/src/tree/deep" || echo gone)$(grep -c '"undo": {"moved"' "$t/tr/o2")" "gone1"
+    "$me" transfer move "$X" "$t/tr/src/tree/big.bin" </dev/null >/dev/null
+    check "transfer move across filesystems: copy then remove" "$(test -e "$t/tr/src/tree/big.bin" || echo gone)$(cmp -s "$t/tr/dst/tree/big.bin" "$X/big.bin" && echo same)" "gonesame"
+    check "transfer: a folder into itself is refused" "$("$me" transfer copy "$t/tr/dst/tree/deep" "$t/tr/dst/tree" </dev/null | grep -c '"failed": {')$(test -e "$t/tr/dst/tree/deep/tree" || echo none)" "1none"
+    check "transfer: into the folder it's in does nothing" "$("$me" transfer move "$t/tr/dst" "$t/tr/dst/tree" </dev/null | grep -c '"skipped"')" "1"
+    mkdir -p "$t/tr/lock"; echo s >"$t/tr/lock/secret"; chmod 000 "$t/tr/lock/secret"; echo ok >"$t/tr/lock/fine"
+    "$me" transfer copy "$X" "$t/tr/lock" </dev/null >"$t/tr/o3"; chmod 600 "$t/tr/lock/secret"
+    check "transfer: one failed item, the rest goes on" "$(grep -c '"failed": {' "$t/tr/o3")$(cat "$X/lock/fine")$(tail -1 "$t/tr/o3")" '1ok{"done": true, "failed": 1}'
+    head -c 30000000 /dev/zero >"$t/tr/slow.bin"   # 30 × 1 MiB blocks at 0.05 s: still copying at 0.6 s
+    HF_SLOW_COPY=0.05 "$me" transfer copy "$X" "$t/tr/slow.bin" </dev/null >"$t/tr/o4" & tp=$!; sleep 0.6
+    check "transfer: writes a hidden part file" "$(test -e "$X/.slow.bin.himeko-part" && echo part)$(test -e "$X/slow.bin" || echo none)" "partnone"
+    kill -TERM $tp; wait $tp
+    check "transfer: cancel removes the part file" "$(ls -A "$X" | grep -c himeko-part)$(tail -1 "$t/tr/o4")" '0{"cancelled": true}'
+    check "transfer: progress lines while copying" "$(( $(grep -c '"progress"' "$t/tr/o4") > 2 ))" "1"
+    rm -rf "$X"
     exit $fail ;;
 *) echo "usage: see the header of $0" >&2; exit 2 ;;
 esac
