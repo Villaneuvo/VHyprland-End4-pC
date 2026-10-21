@@ -105,7 +105,7 @@ straight from end4-pC (it follows the wallpaper), the Material Symbols icon font
   type a path), filters (All/Images/Videos/Docs), sort, hidden files, type-to-search
 - **Files**: open, Open with, cut/copy/paste (shares the clipboard with Dolphin, Chrome...), rename in place, new
   folder, compress/extract, set as wallpaper, copy path, open a terminal here, Trash and Restore, all **undoable**
-  (`Ctrl+Z` or the toast's Undo). It never overwrites: clashing names become "name (2)"
+  (`Ctrl+Z` or the toast's Undo). Clashing names ask: Skip, Keep Both or Replace (the old one goes to Trash)
 - **Keys**: `Ctrl+1/2` icons/details, `Ctrl+T/W` tabs, `F2` rename, `Del` trash, `Shift+Del` delete,
   `Ctrl+Shift+N` new folder, `F11` info panel, `F9` sidebar rail, `Ctrl+±` zoom, arrows/Shift to select
 - **Motion**: moves like the shell (end4-pC's curves); turns off with GNOME's "animations" switch or
@@ -118,9 +118,10 @@ straight from end4-pC (it follows the wallpaper), the Material Symbols icon font
   details.
 - **Places**: Recent (GTK's shared history), Starred, and pinned folders shared with GNOME Files and every GTK file dialog (Ctrl+D pins).
 - **Network**: connect to smb/sftp/ftp/WebDAV/NFS servers (passwords in the keyring), browse them like folders, see them in the sidebar, and pin server folders (shared with GNOME Files).
+- **Copy, move, drag and drop**: drag files onto folders, the sidebar, tabs or other apps; long copies show progress and can be cancelled; name clashes ask (Skip, Keep Both, Replace to Trash, Merge).
 
-Not there yet (use **Show in Dolphin** from its menus): drag and drop, split view, tags.
-File operations live in `ops.sh`; `ops.sh selftest` checks them (naming, copy/move, zip, trash and restore).
+Not there yet (use **Show in Dolphin** from its menus): split view, tags.
+File operations live in `ops.sh` (copies and moves in `transfer.py`); `ops.sh selftest` checks them (naming, transfers and conflicts, zip, trash and restore, servers).
 
 ## 💤 Hibernate (opt-in)
 
