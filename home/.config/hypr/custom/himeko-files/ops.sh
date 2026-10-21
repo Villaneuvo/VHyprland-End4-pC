@@ -69,6 +69,7 @@ thumbnailers() { # usable .thumbnailer files, user dir first; glycin-* start the
 cmd=${1:-}; shift || true
 case "$cmd" in
 recent|starred|bookmarks|servers) exec python3 -I "$(dirname -- "$0")/places.py" "$cmd" "$@" ;;
+untrash) exec python3 -I "$(dirname -- "$0")/transfer.py" untrash "$@" ;;
 transfer) exec python3 -I "$(dirname -- "$0")/transfer.py" "$@" ;;
 net) exec python3 -I "$(dirname -- "$0")/network.py" "$@" ;;
 placesmoved) exec python3 -I "$(dirname -- "$0")/places.py" moved "$@" ;;
@@ -528,7 +529,8 @@ BUS
                           "{\"user\": \"tester\", \"password\": \"secret\", \"save\": \"never\"}" | "$me" net mount "$a/sub" >"$t/m1"
             "$me" net mounts | cut -f2 >"$t/m2"
             p=$(tail -1 "$t/m1" | python3 -I -c "import json,sys; print(json.load(sys.stdin)[\"path\"])")
-            ls "$p/.." >"$t/m3"; "$me" paste copy "$p" "$t/up.txt" >"$t/m4"
+            ls "$p/.." >"$t/m3"; "$me" paste copy "$p" "$t/up.txt" >"$t/m4"; cat "$p/up.txt" >"$t/m4c"
+            echo up2 >"$t/up.txt"; echo "{\"choice\": \"replace\"}" | "$me" transfer copy "$p" "$t/up.txt" >"$t/m9"
             echo "{\"choice\": 1}" | HF_ASK_QUESTION=1 "$me" net mount "$a/" >"$t/m5"
             "$me" net unmount "$a/"; "$me" net mounts | wc -l >"$t/m6"
             s=$(date +%s); "$me" net browse "dav://127.0.0.1:1/" </dev/null | tail -1 >"$t/m7"; echo $(( $(date +%s) - s )) >"$t/m8"
@@ -538,7 +540,8 @@ BUS
         check "net mount: prints the folder's FUSE path" "$(tail -1 "$t/m1" | grep -c "/gvfs/dav:host=127.0.0.1,port=$port,ssl=false/sub\"")" "1"
         check "net mounts: lists it" "$(cat "$t/m2")" "dav://127.0.0.1:$port/"
         check "net: the FUSE folder lists the server" "$(tr '\n' ' ' <"$t/m3")" "a.txt sub "
-        check "paste: copies onto a server" "$(grep -c '/sub/up.txt$' "$t/m4")$(cat "$t/dav/sub/up.txt")" "1up"
+        check "paste: copies onto a server" "$(grep -c '/sub/up.txt$' "$t/m4")$(cat "$t/m4c")" "1up"
+        check "transfer onto a server: no Trash there, Replace overwrites" "$(grep -c '"canTrash": false' "$t/m9")$(cat "$t/dav/sub/up.txt")" "1up2"
         check "net mount: question, then cancel" "$(head -1 "$t/m5" | grep -c '"ask": "question"')$(tail -1 "$t/m5")" '1{"error": "Cancelled"}'
         check "net unmount: gone" "$(cat "$t/m6")" "0"
         check "net browse: unreachable fails fast with a message" "$(grep -c '"error"' "$t/m7")$(( $(cat "$t/m8") < 10 ))" "11"
@@ -569,6 +572,26 @@ BUS
     check "transfer: cancel removes the part file" "$(ls -A "$X" | grep -c himeko-part)$(tail -1 "$t/tr/o4")" '0{"cancelled": true}'
     check "transfer: progress lines while copying" "$(( $(grep -c '"progress"' "$t/tr/o4") > 2 ))" "1"
     rm -rf "$X"
+    # ---- transfers: conflicts ----
+    export XDG_DATA_HOME=$t/xdg; C=$t/cf; mkdir -p "$C/a/d" "$C/b/d"
+    echo new >"$C/a/f.txt"; echo old >"$C/b/f.txt"; echo n1 >"$C/a/d/x"; echo o1 >"$C/b/d/x"; echo n2 >"$C/a/d/y"
+    echo '{"choice": "skip"}' | "$me" transfer copy "$C/b" "$C/a/f.txt" >"$C/o1"
+    check "conflict: asks, skip keeps the old" "$(grep -c '"ask": "conflict"' "$C/o1")$(cat "$C/b/f.txt")$(grep -c '"skipped"' "$C/o1")" "1old1"
+    echo '{"choice": "keep"}' | "$me" transfer copy "$C/b" "$C/a/f.txt" >/dev/null
+    check "conflict: keep both" "$(cat "$C/b/f (2).txt")" "new"
+    echo '{"choice": "replace"}' | "$me" transfer copy "$C/b" "$C/a/f.txt" >"$C/o2"
+    check "conflict: replace sends the old one to Trash" "$(cat "$C/b/f.txt")$(cat "$XDG_DATA_HOME"/Trash/files/f.txt*)" "newold"
+    tr=$(grep -o '"trash": \[[^]]*\]' "$C/o2" | python3 -I -c 'import json,sys; print("\t".join(json.loads("{"+sys.stdin.read()+"}")["trash"]))')
+    rm "$C/b/f.txt"; "$me" untrash $tr
+    check "untrash puts the original back" "$(cat "$C/b/f.txt")" "old"
+    printf '%s\n' '{"choice": "merge"}' '{"choice": "replace"}' | "$me" transfer copy "$C/b" "$C/a/d" >"$C/o3"
+    check "conflict: merge asks again inside, creates the rest" "$(grep -c '"ask"' "$C/o3")$(cat "$C/b/d/x" "$C/b/d/y" | tr -d '\n')$(grep -c "\"created\": \"$C/b/d/y\"" "$C/o3")" "2n1n21"
+    echo n3 >"$C/a/g.txt"; echo o3 >"$C/b/g.txt"
+    echo '{"choice": "skip", "all": true}' | "$me" transfer copy "$C/b" "$C/a/f.txt" "$C/a/g.txt" >"$C/o4"
+    check "conflict: apply to all asks once" "$(grep -c '"ask"' "$C/o4")$(grep -c '"more": true' "$C/o4")" "11"
+    echo '{"cancel": true}' | "$me" transfer copy "$C/b" "$C/a/f.txt" >"$C/o5"
+    check "conflict: cancel stops, nothing written" "$(tail -1 "$C/o5")$(ls -A "$C/b" | grep -c himeko-part)" '{"cancelled": true}0'
+    unset XDG_DATA_HOME
     exit $fail ;;
 *) echo "usage: see the header of $0" >&2; exit 2 ;;
 esac

@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """Copies and moves for Himeko Files (ops.sh transfer copy|move|auto DEST SRC…), as JSON lines on stdout:
   {"scanning": n} … {"total": bytes, "files": n}, then {"progress": {"bytes", "file"}} at most every 150 ms
+  {"ask": "conflict", name, dest, isDir, canTrash, old: {size, mtime}, new: {size, mtime}, more} on a taken name,
+    answered by one line on stdin: {"choice": "skip"|"keep"|"replace"|"merge", "all": bool} or {"cancel": true}
   {"made": [src, created]} | {"skipped": src} per source; {"failed": {"path", "error"}} per failed item
-  {"undo": {"created": path}} | {"undo": {"moved": [from, to]}} as they happen (the app's Undo replays them)
+  {"undo": {"created": path}} | {"undo": {"moved": [from, to]}} | {"undo": {"replaced": path, "trash": [dir, name]}}
+    as they happen (the app's Undo replays them; replaced originals went to that Trash)
   {"done": true, "failed": n} | {"error": msg} | {"cancelled": true} at the end
 auto moves an item when it's on the destination's filesystem and copies it otherwise. Files are written as
 .NAME.himeko-part next to their target and renamed when complete; SIGTERM stops after the current block and removes
-the part file. Servers (gvfs FUSE) get the data only, no times or modes. HF_SLOW_COPY=SECONDS (tests) slows each block."""
+the part file. Replace sends the old item to Trash where there is one, and overwrites where there isn't (servers).
+Servers (gvfs FUSE) get the data only, no times or modes. HF_SLOW_COPY=SECONDS (tests) slows each block.
+  transfer.py untrash TRASHDIR NAME  -> puts a trashed item back where it came from (Undo of a Replace)"""
 import errno
 import json
 import os
@@ -15,6 +20,7 @@ import signal
 import stat
 import sys
 import time
+from urllib.parse import unquote
 
 GVFS = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}", "gvfs")
 SLOW = float(os.environ.get("HF_SLOW_COPY") or 0)
@@ -86,13 +92,108 @@ def size_of(path):
     return (st.st_size, 1) if stat.S_ISREG(st.st_mode) else (0, 0)
 
 
+def answer():
+    """One JSON line from the app; end of input or garbage counts as Cancel."""
+    line = sys.stdin.readline()
+    try:
+        return json.loads(line) if line.strip() else {"cancel": True}
+    except ValueError:
+        return {"cancel": True}
+
+
+def can_trash(path):
+    try:
+        from gi.repository import Gio
+        info = Gio.File.new_for_path(path).query_info("access::can-trash", Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, None)
+        return info.get_attribute_boolean("access::can-trash")
+    except Exception:
+        return False
+
+
+def dev_of(path):
+    """The filesystem PATH is (or would be) on: its nearest existing ancestor's."""
+    while not os.path.lexists(path):
+        path = os.path.dirname(path)
+    return os.stat(path).st_dev
+
+
+def trash_dir_for(path):
+    """The Trash GLib uses for PATH: the home one on its filesystem, else $topdir/.Trash-$UID."""
+    home = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"), "Trash")
+    dev = os.lstat(os.path.dirname(path)).st_dev
+    if dev_of(home) == dev:
+        return home, None
+    top = os.path.dirname(path)
+    while top != "/" and os.lstat(os.path.dirname(top)).st_dev == dev:
+        top = os.path.dirname(top)
+    return os.path.join(top, f".Trash-{os.getuid()}"), top
+
+
+def trash(path):
+    """Send PATH to Trash; returns (trash dir, name inside it) for Undo, the name None if it can't be found.
+    Raises only when the item is still in place."""
+    from gi.repository import Gio
+    folder, top = trash_dir_for(path)
+    Gio.File.new_for_path(path).trash(None)
+    want = path if top is None else os.path.relpath(path, top)
+    base, newest = os.path.basename(path), (None, -1)
+    try:
+        infos = os.listdir(os.path.join(folder, "info"))
+    except OSError:
+        return folder, None   # trashed somewhere we didn't expect: the copy goes on, Undo can't bring it back
+    for info in infos:
+        if not info.startswith(base) or not info.endswith(".trashinfo"):
+            continue
+        full = os.path.join(folder, "info", info)
+        with open(full, encoding="utf-8", errors="replace") as f:
+            stored = next((unquote(l[5:].strip()) for l in f if l.startswith("Path=")), "")
+        if stored == want and os.path.getmtime(full) > newest[1]:
+            newest = (info[:-len(".trashinfo")], os.path.getmtime(full))
+    return folder, newest[0]
+
+
+def untrash(folder, name):
+    info = os.path.join(folder, "info", name + ".trashinfo")
+    with open(info, encoding="utf-8", errors="replace") as f:
+        stored = next((unquote(l[5:].strip()) for l in f if l.startswith("Path=")), "")
+    target = stored if stored.startswith("/") else os.path.join(os.path.dirname(folder), stored)
+    if os.path.lexists(target):
+        print(f"transfer.py: “{target}” exists, not restoring over it", file=sys.stderr)
+        sys.exit(1)
+    os.rename(os.path.join(folder, "files", name), target)
+    os.unlink(info)
+
+
 class Job:
-    def __init__(self, dest):
+    def __init__(self, dest, move_mode):
         self.dest = dest
         self.done = 0
         self.last = 0.0
         self.failed = 0
         self.meta = not remote(dest)
+        self.mode = move_mode       # "copy" | "move" | "auto"
+        self.dest_dev = os.stat(dest).st_dev
+        self.all = {}               # "file"|"folder" -> the choice Apply to All set
+
+    def choose(self, src, old, more):
+        """Ask what to do about OLD, which has SRC's name: skip | keep | replace | merge (folders)."""
+        folder = os.path.isdir(src) and not os.path.islink(src) and os.path.isdir(old) and not os.path.islink(old)
+        kind = "folder" if folder else "file"
+        if kind in self.all:
+            return self.all[kind]
+        so, sn = os.lstat(old), os.lstat(src)
+        out({"ask": "conflict", "name": os.path.basename(src), "dest": os.path.dirname(old), "isDir": folder,
+             "canTrash": can_trash(old), "old": {"size": so.st_size, "mtime": int(so.st_mtime)},
+             "new": {"size": sn.st_size, "mtime": int(sn.st_mtime)}, "more": bool(more)})
+        a = answer()
+        if a.get("cancel"):
+            raise Cancelled
+        choice = a.get("choice")
+        if choice not in (("skip", "keep", "merge") if folder else ("skip", "keep", "replace")):
+            choice = "keep"   # the one that never loses anything
+        if a.get("all"):
+            self.all[kind] = choice
+        return choice
 
     def tick(self, n, name):
         self.done += n
@@ -188,14 +289,75 @@ def remove(path):
         os.unlink(path)
 
 
-def target_for(src, dest, job):
-    """Where SRC goes in DEST. Task 2 asks on a taken name; until then a taken name keeps both."""
-    return unique(dest, os.path.basename(src))
+def place(src, dest, job, more):
+    """Put SRC into the folder DEST, asking when its name is taken. Returns the path it went to, or None (skipped)."""
+    dst = os.path.join(dest, os.path.basename(src))
+    if os.path.lexists(dst):
+        if os.path.dirname(src) == dest:
+            dst = unique(dest, os.path.basename(src))   # a copy into its own folder is a duplicate, not a clash
+        else:
+            choice = job.choose(src, dst, more)
+            if choice == "skip":
+                return None
+            if choice == "keep":
+                dst = unique(dest, os.path.basename(src))
+            elif choice == "merge":
+                return merge(src, dst, job, more)
+            elif choice == "replace":
+                if can_trash(dst):
+                    try:
+                        folder, name = trash(dst)
+                    except Exception as e:   # couldn't trash it: leave it alone rather than overwrite it
+                        job.fail(src, f"Couldn't move “{os.path.basename(dst)}” to Trash: {getattr(e, 'message', e)}")
+                        return None
+                    if name:
+                        out({"undo": {"replaced": dst, "trash": [folder, name]}})
+                else:
+                    remove(dst)   # no Trash here (a server): the dialog said it would be overwritten
+    move = job.mode == "move" or (job.mode == "auto" and os.lstat(src).st_dev == job.dest_dev)
+    if move and os.lstat(src).st_dev == job.dest_dev:
+        os.rename(src, dst)
+        job.tick(size_of(dst)[0], os.path.basename(src))
+        out({"undo": {"moved": [src, dst]}})
+        return dst
+    try:
+        complete = copy_item(src, dst, job)
+    except (Cancelled, NoSpace):
+        if os.path.lexists(dst):
+            out({"undo": {"created": dst}})   # the part of it that got there
+        raise
+    if move and complete:
+        remove(src)   # only once its copy is whole
+        out({"undo": {"moved": [src, dst]}})
+    else:
+        out({"undo": {"created": dst}})
+    return dst
+
+
+def merge(src, dst, job, more):
+    """Copy or move SRC's contents into the existing folder DST, asking again for each clash inside."""
+    names = sorted(os.listdir(src))
+    for i, name in enumerate(names):
+        if cancelled:
+            raise Cancelled
+        child = os.path.join(src, name)
+        try:
+            place(child, dst, job, more or i < len(names) - 1)
+        except (Cancelled, NoSpace):
+            raise
+        except OSError as e:
+            job.fail(child, e.strerror or str(e))
+    if job.mode != "copy":
+        try:
+            os.rmdir(src)   # a move leaves the source folder only if something stayed behind
+        except OSError:
+            pass
+    return dst
 
 
 def transfer(mode, dest, sources):
     dest = os.path.abspath(dest)
-    job = Job(dest)
+    job = Job(dest, mode)
     sources = [os.path.abspath(s).rstrip("/") or "/" for s in sources]
     sizes, files = {}, 0
     for i, src in enumerate(sources):
@@ -206,8 +368,8 @@ def transfer(mode, dest, sources):
         files += sizes[src][1]
         out({"scanning": files})
     out({"total": sum(b for b, _ in sizes.values()), "files": files})
-    dest_dev = os.stat(dest).st_dev
-    for src in sources:
+    dest_dev = job.dest_dev
+    for i, src in enumerate(sources):
         if cancelled:
             raise Cancelled
         if not os.path.lexists(src):
@@ -222,26 +384,10 @@ def transfer(mode, dest, sources):
         if same_folder and (move or mode == "auto"):
             out({"skipped": src})
             continue
-        dst = target_for(src, dest, job)
-        if dst is None:
-            out({"skipped": src})
-            continue
         try:
-            if move and os.lstat(src).st_dev == dest_dev:
-                os.rename(src, dst)
-                job.tick(sizes[src][0], os.path.basename(src))
-                out({"undo": {"moved": [src, dst]}})
-            else:
-                complete = copy_item(src, dst, job)
-                if move and complete:
-                    remove(src)   # only once its copy is whole
-                    out({"undo": {"moved": [src, dst]}})
-                else:
-                    out({"undo": {"created": dst}})
-            out({"made": [src, dst]})
+            dst = place(src, dest, job, i < len(sources) - 1)
+            out({"made": [src, dst]} if dst else {"skipped": src})
         except (Cancelled, NoSpace):
-            if os.path.lexists(dst):
-                out({"undo": {"created": dst}})   # the part of it that got there
             raise
         except OSError as e:
             job.fail(src, e.strerror or str(e))
@@ -249,6 +395,8 @@ def transfer(mode, dest, sources):
 
 
 def main(argv):
+    if len(argv) == 3 and argv[0] == "untrash":
+        return untrash(argv[1], argv[2])
     if len(argv) < 3 or argv[0] not in ("copy", "move", "auto"):
         print("transfer.py: usage: copy|move|auto DEST SRC…", file=sys.stderr)
         sys.exit(1)
