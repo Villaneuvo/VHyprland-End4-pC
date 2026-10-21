@@ -15,6 +15,8 @@ MouseArea {
     readonly property bool selected: tab.selection[item.path] === true
     readonly property bool focused: tab.current === item.path
     readonly property bool cut: Fs.clip.mode === "move" && Fs.clip.paths.indexOf(item.path) >= 0
+    readonly property bool dropHover: Fs.dragTarget === item.path
+    property int dragCount: 0              // shown on the tile while its drag image is taken (several items)
     readonly property bool special: item.isDir && Object.values(Fs.dirs).indexOf(item.path) >= 0
     signal activated()
     signal menu(real x, real y)
@@ -61,8 +63,8 @@ MouseArea {
         color: root.selected ? Theme.alpha(Theme.primary, 0.12)
              : root.wide ? (root.containsMouse ? Theme.surfaceHighest : Theme.surfaceHigh)
              : (root.containsMouse ? Theme.hover : "transparent")
-        border.width: root.focused && !root.selected ? 1 : 0
-        border.color: Theme.outline
+        border.width: root.dropHover ? 2 : root.focused && !root.selected ? 1 : 0
+        border.color: root.dropHover ? Theme.primary : Theme.outline
     }
 
     // Starred: a small star at the top left
@@ -156,6 +158,42 @@ MouseArea {
             onAccepted: (name) => root.renamed(name)
             onCancelled: root.renameCancelled()
         }
+    }
+
+    // ---- drag: the selection (this one included) as file URIs, to folders, the sidebar, tabs or other apps ----
+    Drag.dragType: Drag.Automatic
+    Drag.supportedActions: Qt.CopyAction | Qt.MoveAction
+    Drag.proposedAction: Qt.MoveAction
+    DragHandler {
+        target: null
+        acceptedButtons: Qt.LeftButton
+        enabled: !root.renaming
+        onActiveChanged: {
+            if (!active) { root.Drag.active = false; Fs.dragPaths = []; return; }
+            if (!root.selected) root.tab.select(root.item, 0);
+            const paths = root.tab.paths();
+            Fs.dragPaths = paths;
+            root.Drag.mimeData = { "text/uri-list": paths.map(p => Fs.uri(p)).join("\r\n") + "\r\n" };
+            root.dragCount = paths.length > 1 ? paths.length : 0;
+            root.grabToImage((r) => { root.Drag.imageSource = r.url; root.dragCount = 0; root.Drag.active = true; });
+        }
+    }
+    // A folder takes drops: it lights up, and opens after a short hover (Browser's spring timer)
+    DropArea {
+        anchors.fill: parent
+        enabled: root.item.isDir
+        keys: ["text/uri-list"]
+        onEntered: (drag) => { if (Fs.dragPaths.indexOf(root.item.path) >= 0) drag.accepted = false; else Fs.dragTarget = root.item.path; }
+        onExited: if (Fs.dragTarget === root.item.path) Fs.dragTarget = ""
+        onDropped: (drop) => { Fs.dropOn(root.item.path, drop.urls); drop.accept(Qt.CopyAction); }
+    }
+    // How many items a drag carries, on the drag image
+    Rectangle {
+        visible: root.dragCount > 0
+        z: 3
+        x: 6; y: 6; width: 26; height: 26; radius: 13
+        color: Theme.primary
+        Text { anchors.centerIn: parent; text: root.dragCount; color: Theme.inkPrimary; font.family: Theme.font; font.pixelSize: 12; font.weight: 700 }
     }
 
     Accessible.role: Accessible.ListItem

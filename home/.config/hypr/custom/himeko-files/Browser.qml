@@ -148,6 +148,7 @@ FocusScope {
         function onFailed(text) { toast.show(text, false, true); }
         function onCreated(path) { root.tab.selectPath(path); root.renamingPath = path; }
         function onNetAsk(req) { root.asks = root.asks.concat([req]); }
+        function onDragTargetChanged() { if (Fs.dragTarget) springTimer.restart(); else springTimer.stop(); }
         function onJobsActiveChanged() { if (root.quitting && !Fs.jobsActive) Qt.quit(); }
         function onNetAskGone(owner) { root.asks = root.asks.filter(r => r.owner !== owner); }
         function onTransferAsk(req) { root.conflicts = root.conflicts.concat([req]); }
@@ -427,6 +428,39 @@ FocusScope {
                     onBackgroundMenu: (x, y) => { const p = mapToItem(root, x, y); root.backgroundMenu(p.x, p.y); }
                     onRenamed: (it, name) => root.finishRename(it, name)
                     onRenameCancelled: { root.renamingPath = ""; view.forceActiveFocus(); }
+                }
+
+                // ---- drops onto the view itself go into the folder shown (not Recent, Starred, Network) ----
+                DropArea {
+                    id: viewDrop
+                    z: -1
+                    anchors.fill: parent
+                    enabled: root.tab !== null && !root.tab.virtual
+                    keys: ["text/uri-list"]
+                    onEntered: Fs.dragTarget = root.tab.path
+                    onExited: if (Fs.dragTarget === root.tab.path) Fs.dragTarget = ""
+                    onDropped: (drop) => { Fs.dropOn(root.tab.path, drop.urls); drop.accept(Qt.CopyAction); }
+                }
+                // Near the top or bottom edge while dragging, the view scrolls (a drop there still means this folder)
+                Repeater {
+                    model: [-1, 1]
+                    delegate: DropArea {
+                        required property int modelData
+                        z: 5
+                        width: parent.width; height: 36
+                        y: modelData < 0 ? 128 : parent.height - 36
+                        enabled: viewDrop.enabled
+                        keys: ["text/uri-list"]
+                        onEntered: { Fs.dragTarget = root.tab.path; root.autoScroll = modelData; }
+                        onExited: root.autoScroll = 0
+                        onDropped: (drop) => { root.autoScroll = 0; Fs.dropOn(root.tab.path, drop.urls); drop.accept(Qt.CopyAction); }
+                    }
+                }
+                Rectangle {
+                    anchors.fill: parent; anchors.margins: 6; anchors.topMargin: 124
+                    visible: root.tab !== null && !root.tab.virtual && Fs.dragTarget === root.tab.path
+                    radius: Theme.rPanel; color: "transparent"
+                    border.width: 2; border.color: Theme.alpha(Theme.primary, 0.6)
                 }
 
                 Loader {
@@ -1034,6 +1068,9 @@ FocusScope {
         function newFolder(): void { Fs.newFolder(root.tab.path); }
         function pasteHere(paths: string): void { Fs.transfer("copy", root.tab.path, paths.split("|")); }
         function jobsOpen(on: bool): void { root.jobsOpen = on; }
+        // Drops and drag hovers, as a pointer would do them (a real drag can't be faked off-screen)
+        function dropUris(target: string, uris: string): void { Fs.dropOn(target === "trash" ? Fs.trashDir : target, uris.split("|")); }
+        function dragHover(target: string): void { Fs.dragTarget = target; }
         function closeTabIpc(): void { root.closeTab(root.tabIndex); }
         function windowClosedIpc(): void { root.windowClosed(); }   // what FloatingWindow.onClosed runs
         function jobsState(): string { return JSON.stringify(Fs.jobs); }
@@ -1193,6 +1230,21 @@ FocusScope {
         if (!r) return;
         conflicts = conflicts.slice(1);
         try { r.reply(a); } catch (e) {}   // its transfer may have just ended
+    }
+    // ---- dragging: spring-open what the pointer rests on, scroll at the edges ----
+    property int autoScroll: 0           // -1 up, 1 down, while a drag sits at the view's edge
+    Timer {
+        interval: 16; repeat: true; running: root.autoScroll !== 0   // runs only while a drag rests at an edge
+        onTriggered: {
+            const l = root.tab.viewMode === "details" ? detailsView : iconView;
+            const top = l.originY - l.topMargin, bottom = l.originY + l.contentHeight + l.bottomMargin - l.height;
+            l.contentY = Math.max(top, Math.min(bottom, l.contentY + 12 * root.autoScroll));
+        }
+    }
+    Timer { id: springTimer; interval: 800; onTriggered: root.springOpen(Fs.dragTarget) }
+    function springOpen(t) {
+        if (t.startsWith("tab:")) tabIndex = Number(t.slice(4));
+        else if (t && t !== tab.path) tab.go(t);
     }
     property bool addressHelp: false
     property var schemes: []            // what gvfs can connect to here (the address help lists only those)

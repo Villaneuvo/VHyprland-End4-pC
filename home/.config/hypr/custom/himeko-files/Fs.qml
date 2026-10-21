@@ -368,6 +368,18 @@ Singleton {
             : u.moved ? { op: "moveBack", from: u.moved[1], to: u.moved[0] }
             : { op: "untrash", dir: u.trash[0], name: u.trash[1] });
     }
+    // ---- drag and drop: what's under the pointer, what we're dragging, and the one thing every drop does ----
+    property string dragTarget: ""       // a folder path, Fs.trashDir, or "tab:N" (lit up; spring-opens after 800 ms)
+    property var dragPaths: []           // paths of a drag that started here (a folder isn't a target for itself)
+    function dropOn(dest, uris) {
+        dragTarget = "";
+        const d = dropPaths(uris);
+        if (d.ignored) toast("Only files can be dropped here", false);
+        if (!d.paths.length) return;
+        const action = dropAction(d.paths, dest);
+        if (action === "trash") trash(d.paths);
+        else if (action === "transfer") transfer("auto", dest, d.paths);
+    }
     // Dropped URIs: local files as paths; anything else (web links) only counted
     function dropPaths(uris) {
         const paths = [];
@@ -383,6 +395,7 @@ Singleton {
     }
     function dropAction(paths, dest) {
         if (dest === trashDir) return "trash";
+        if (paths.indexOf(dest) >= 0) return "none";   // a folder let go on its own tile
         return paths.every(p => parentOf(p) === dest) ? "none" : "transfer";
     }
     function serversList(cb) { run([ops, "servers", "list"], (text) => cb(lines(text))); }

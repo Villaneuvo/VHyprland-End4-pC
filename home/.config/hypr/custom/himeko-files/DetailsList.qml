@@ -99,6 +99,8 @@ ListView {
         readonly property bool selected: root.tab.selection[modelData.path] === true
         readonly property bool cut: Fs.clip.mode === "move" && Fs.clip.paths.indexOf(modelData.path) >= 0
         readonly property string kind: Fs.kindOf(modelData)
+        readonly property bool dropHover: Fs.dragTarget === modelData.path
+        property int dragCount: 0
         width: root.width // ListView pins delegates at x = 0: pad inside instead
         height: 48
         hoverEnabled: true
@@ -135,9 +137,45 @@ ListView {
             anchors.leftMargin: root.pad; anchors.rightMargin: root.pad
             radius: Theme.rRow
             color: row.selected ? Theme.primaryContainer : (row.containsMouse ? Theme.hover : "transparent")
-            border.width: root.tab.current === row.modelData.path && !row.selected ? 1 : 0
-            border.color: Theme.outline
+            border.width: row.dropHover ? 2 : root.tab.current === row.modelData.path && !row.selected ? 1 : 0
+            border.color: row.dropHover ? Theme.primary : Theme.outline
         }
+        // ---- drag: the selection (this one included) as file URIs, to folders, the sidebar, tabs or other apps ----
+        Drag.dragType: Drag.Automatic
+        Drag.supportedActions: Qt.CopyAction | Qt.MoveAction
+        Drag.proposedAction: Qt.MoveAction
+        DragHandler {
+            target: null
+            acceptedButtons: Qt.LeftButton
+            enabled: !(root.renamingPath === row.modelData.path)
+            onActiveChanged: {
+                if (!active) { row.Drag.active = false; Fs.dragPaths = []; return; }
+                if (!row.selected) root.tab.select(row.modelData, 0);
+                const paths = root.tab.paths();
+                Fs.dragPaths = paths;
+                row.Drag.mimeData = { "text/uri-list": paths.map(p => Fs.uri(p)).join("\r\n") + "\r\n" };
+                row.dragCount = paths.length > 1 ? paths.length : 0;
+                row.grabToImage((r) => { row.Drag.imageSource = r.url; row.dragCount = 0; row.Drag.active = true; });
+            }
+        }
+        // A folder takes drops: it lights up, and opens after a short hover (Browser's spring timer)
+        DropArea {
+            anchors.fill: parent
+            enabled: row.modelData.isDir
+            keys: ["text/uri-list"]
+            onEntered: (drag) => { if (Fs.dragPaths.indexOf(row.modelData.path) >= 0) drag.accepted = false; else Fs.dragTarget = row.modelData.path; }
+            onExited: if (Fs.dragTarget === row.modelData.path) Fs.dragTarget = ""
+            onDropped: (drop) => { Fs.dropOn(row.modelData.path, drop.urls); drop.accept(Qt.CopyAction); }
+        }
+        // How many items a drag carries, on the drag image
+        Rectangle {
+            visible: row.dragCount > 0
+            z: 3
+            x: 6; y: 6; width: 26; height: 26; radius: 13
+            color: Theme.primary
+            Text { anchors.centerIn: parent; text: row.dragCount; color: Theme.inkPrimary; font.family: Theme.font; font.pixelSize: 12; font.weight: 700 }
+        }
+
         RowLayout {
             anchors.fill: parent
             anchors.leftMargin: root.pad; anchors.rightMargin: root.pad

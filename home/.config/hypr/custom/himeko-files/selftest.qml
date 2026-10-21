@@ -51,6 +51,7 @@ ShellRoot {
         check("dropAction: same folder", Fs.dropAction(["/h/d/a", "/h/d/b"], "/h/d"), "none");
         check("dropAction: trash", Fs.dropAction(["/h/d/a"], Fs.trashDir), "trash");
         check("dropAction: elsewhere", Fs.dropAction(["/h/d/a"], "/h/e"), "transfer");
+        check("dropAction: a folder let go on itself", Fs.dropAction(["/h/d/x", "/h/e/y"], "/h/d/x"), "none");
 
         // ---- places rules ----
         const bm = Fs.parseBookmarks("file:///home/u/Documents\nsftp://host/srv Server\nfile:///home/u/Proj%20%231%20%25%20%E2%9C%A8 Projects ✨\n\n");
