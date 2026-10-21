@@ -1038,6 +1038,8 @@ FocusScope {
         function windowClosedIpc(): void { root.windowClosed(); }   // what FloatingWindow.onClosed runs
         function jobsState(): string { return JSON.stringify(Fs.jobs); }
         function cancelJob(id: int): void { Fs.cancelJob(id); }
+        function conflictState(): string { return conflictLoader.item ? JSON.stringify(conflictLoader.item.state()) : ""; }
+        function conflictKey(enter: bool): void { if (conflictLoader.item) enter ? conflictLoader.item.choose("keep") : conflictLoader.item.cancel(); }
         function conflictAnswer(choice: string, all: bool): void { root.answerConflict(choice === "cancel" ? { cancel: true } : { choice: choice, all: all }); }
         function renameItem(name: string, to: string): void { const it = root.tab.items.find(x => x.name === name); if (it) Fs.rename(it.path, to); }
         function del(): void { root.trashSelection(); }
@@ -1279,6 +1281,19 @@ FocusScope {
             req: root.asks[0]
             backdrop: view
             onDone: { root.asks = root.asks.slice(1); view.forceActiveFocus(); }
+        }
+        onLoaded: item.forceActiveFocus()
+    }
+
+    // ---- name conflicts (transfers), one at a time ----
+    Loader {
+        id: conflictLoader
+        anchors.fill: parent
+        active: root.conflicts.length > 0
+        sourceComponent: ConflictDialog {
+            req: root.conflicts[0]
+            backdrop: view
+            onAnswered: (a) => { root.answerConflict(a); view.forceActiveFocus(); }
         }
         onLoaded: item.forceActiveFocus()
     }
