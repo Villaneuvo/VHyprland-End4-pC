@@ -160,28 +160,25 @@ MouseArea {
         }
     }
 
-    // ---- drag: the selection (this one included) as file URIs, to folders, the sidebar, tabs or other apps ----
-    Drag.dragType: Drag.Automatic
-    Drag.supportedActions: Qt.CopyAction | Qt.MoveAction
-    Drag.proposedAction: Qt.MoveAction
+    // ---- drag: the selection (this one included) as file URIs, to folders, the sidebar, tabs or other apps.
+    // The drag itself runs on Browser's proxy (Fs.startDrag): spring-open may destroy this item mid-drag
     DragHandler {
+        id: dragger
         target: null
         acceptedButtons: Qt.LeftButton
         enabled: !root.renaming
         onActiveChanged: {
-            if (!active) { root.Drag.active = false; Fs.dragPaths = []; return; }
+            if (!active) return;   // the drag ends on the proxy (dragFinished), not here
             if (!root.selected) root.tab.select(root.item, 0);
             const paths = root.tab.paths();
-            Fs.dragPaths = paths;
-            root.Drag.mimeData = { "text/uri-list": paths.map(p => Fs.uri(p)).join("\r\n") + "\r\n" };
             root.dragCount = paths.length > 1 ? paths.length : 0;
-            root.grabToImage((r) => { root.Drag.imageSource = r.url; root.dragCount = 0; root.Drag.active = true; });
+            root.grabToImage((r) => { root.dragCount = 0; if (dragger.active) Fs.startDrag(paths, r.url); });   // not after a quick flick
         }
     }
     // A folder takes drops: it lights up, and opens after a short hover (Browser's spring timer)
     DropArea {
         anchors.fill: parent
-        enabled: root.item.isDir
+        enabled: root.item.isDir && !root.tab.inTrash   // nothing goes into folders inside Trash
         keys: ["text/uri-list"]
         onEntered: (drag) => { if (Fs.dragPaths.indexOf(root.item.path) >= 0) drag.accepted = false; else Fs.dragTarget = root.item.path; }
         onExited: if (Fs.dragTarget === root.item.path) Fs.dragTarget = ""

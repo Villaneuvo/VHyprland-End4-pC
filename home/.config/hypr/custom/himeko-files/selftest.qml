@@ -54,6 +54,14 @@ ShellRoot {
         check("dropAction: trash", Fs.dropAction(["/h/d/a"], Fs.trashDir), "trash");
         check("dropAction: elsewhere", Fs.dropAction(["/h/d/a"], "/h/e"), "transfer");
         check("dropAction: a folder let go on itself", Fs.dropAction(["/h/d/x", "/h/e/y"], "/h/d/x"), "none");
+        check("dropAction: back into Trash", Fs.dropAction([Fs.trashDir + "/z.txt"], Fs.trashDir), "none");
+        const cf = (o) => Object.assign({ name: "x", dest: "/h/Dest", isDir: false, oldIsDir: false, newIsDir: false, canTrash: true }, o);
+        check("conflictTitle", [Fs.conflictTitle(cf({})), Fs.conflictTitle(cf({ isDir: true, oldIsDir: true, newIsDir: true }))], ["Replace “x”?", "Merge Folder “x”?"]);
+        check("conflictMessage: file", Fs.conflictMessage(cf({})), "A file with the same name already exists in “Dest”.");
+        check("conflictMessage: a file over a folder, no Trash", Fs.conflictMessage(cf({ oldIsDir: true, canTrash: false })),
+              "A folder with the same name already exists in “Dest”.\nThere's no Trash here: the existing folder will be deleted.");
+        check("conflictMessage: no Trash", Fs.conflictMessage(cf({ canTrash: false })),
+              "A file with the same name already exists in “Dest”.\nThere's no Trash here: the existing file will be overwritten.");
 
         // ---- places rules ----
         const bm = Fs.parseBookmarks("file:///home/u/Documents\nsftp://host/srv Server\nfile:///home/u/Proj%20%231%20%25%20%E2%9C%A8 Projects ✨\n\n");

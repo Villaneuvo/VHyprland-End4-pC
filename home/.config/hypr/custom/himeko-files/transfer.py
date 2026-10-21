@@ -88,6 +88,8 @@ def size_of(path):
                     files += 1
             if cancelled:
                 raise Cancelled
+            if SLOW:
+                time.sleep(SLOW)   # tests: a big tree's walk
         return total, files
     return (st.st_size, 1) if stat.S_ISREG(st.st_mode) else (0, 0)
 
@@ -134,22 +136,21 @@ def trash(path):
     Raises only when the item is still in place."""
     from gi.repository import Gio
     folder, top = trash_dir_for(path)
+    info_dir = os.path.join(folder, "info")
+    # GLib names a second "a.txt" "a.2.txt": the entry is the one that wasn't there before, with our Path=
+    before = set(os.listdir(info_dir)) if os.path.isdir(info_dir) else set()
     Gio.File.new_for_path(path).trash(None)
     want = path if top is None else os.path.relpath(path, top)
-    base, newest = os.path.basename(path), (None, -1)
     try:
-        infos = os.listdir(os.path.join(folder, "info"))
+        new = [i for i in os.listdir(info_dir) if i.endswith(".trashinfo") and i not in before]
     except OSError:
         return folder, None   # trashed somewhere we didn't expect: the copy goes on, Undo can't bring it back
-    for info in infos:
-        if not info.startswith(base) or not info.endswith(".trashinfo"):
-            continue
-        full = os.path.join(folder, "info", info)
-        with open(full, encoding="utf-8", errors="replace") as f:
+    for info in new:
+        with open(os.path.join(info_dir, info), encoding="utf-8", errors="replace") as f:
             stored = next((unquote(l[5:].strip()) for l in f if l.startswith("Path=")), "")
-        if stored == want and os.path.getmtime(full) > newest[1]:
-            newest = (info[:-len(".trashinfo")], os.path.getmtime(full))
-    return folder, newest[0]
+        if stored == want:
+            return folder, info[:-len(".trashinfo")]
+    return folder, None
 
 
 def untrash(folder, name):
@@ -182,7 +183,9 @@ class Job:
         if kind in self.all:
             return self.all[kind]
         so, sn = os.lstat(old), os.lstat(src)
+        is_dir = lambda p: os.path.isdir(p) and not os.path.islink(p)
         out({"ask": "conflict", "name": os.path.basename(src), "dest": os.path.dirname(old), "isDir": folder,
+             "oldIsDir": is_dir(old), "newIsDir": is_dir(src),
              "canTrash": can_trash(old), "old": {"size": so.st_size, "mtime": int(so.st_mtime)},
              "new": {"size": sn.st_size, "mtime": int(sn.st_mtime)}, "more": bool(more)})
         a = answer()
@@ -233,14 +236,31 @@ def copy_data(fi, fo, job, name):
             time.sleep(SLOW)
 
 
+def settle(part, dst):
+    """Put PART at DST without ever overwriting: a name taken meanwhile (another job) gets " (2)". Returns the path."""
+    while True:
+        if os.path.lexists(dst):
+            dst = unique(os.path.dirname(dst), os.path.basename(dst))
+        try:
+            os.link(part, dst)
+        except FileExistsError:
+            continue
+        except OSError:
+            os.rename(part, dst)   # no hard links here (FUSE): a rename right after the check
+            return dst
+        os.unlink(part)
+        return dst
+
+
 def copy_file(src, dst, job):
-    part = os.path.join(os.path.dirname(dst), "." + os.path.basename(dst) + ".himeko-part")
+    """Copy SRC's data to DST through a hidden part file; returns where it ended up."""
+    part = os.path.join(os.path.dirname(dst), f".{os.path.basename(dst)}.{os.getpid()}.himeko-part")
     try:
         with open(src, "rb") as fi, open(part, "wb") as fo:
             copy_data(fi, fo, job, os.path.basename(src))
         if job.meta and not remote(src):
             shutil.copystat(src, part)
-        os.rename(part, dst)
+        return settle(part, dst)
     except BaseException:
         try:
             os.unlink(part)
@@ -250,17 +270,16 @@ def copy_file(src, dst, job):
 
 
 def copy_item(src, dst, job):
-    """Copy SRC to DST (which doesn't exist). Returns True when everything under it was copied."""
+    """Copy SRC to DST (which doesn't exist). Returns (everything under it was copied, where it ended up)."""
     st = os.lstat(src)
     if stat.S_ISLNK(st.st_mode):
         os.symlink(os.readlink(src), dst)
-        return True
+        return True, dst
     if stat.S_ISREG(st.st_mode):
-        copy_file(src, dst, job)
-        return True
+        return True, copy_file(src, dst, job)
     if not stat.S_ISDIR(st.st_mode):
         job.fail(src, "Not a regular file")
-        return False
+        return False, dst
     os.mkdir(dst)
     complete = True
     for name in sorted(os.listdir(src)):
@@ -268,7 +287,7 @@ def copy_item(src, dst, job):
             raise Cancelled
         child = os.path.join(src, name)
         try:
-            complete = copy_item(child, os.path.join(dst, name), job) and complete
+            complete = copy_item(child, os.path.join(dst, name), job)[0] and complete
         except (Cancelled, NoSpace):
             raise
         except OSError as e:
@@ -279,7 +298,7 @@ def copy_item(src, dst, job):
             shutil.copystat(src, dst)
         except OSError:
             pass
-    return complete
+    return complete, dst
 
 
 def remove(path):
@@ -317,11 +336,11 @@ def place(src, dest, job, more):
     move = job.mode == "move" or (job.mode == "auto" and os.lstat(src).st_dev == job.dest_dev)
     if move and os.lstat(src).st_dev == job.dest_dev:
         os.rename(src, dst)
-        job.tick(size_of(dst)[0], os.path.basename(src))
-        out({"undo": {"moved": [src, dst]}})
+        out({"undo": {"moved": [src, dst]}})   # first: a cancel must never fall between the move and its record
+        job.tick(job.sizes.get(src, (0, 0))[0], os.path.basename(src))
         return dst
     try:
-        complete = copy_item(src, dst, job)
+        complete, dst = copy_item(src, dst, job)
     except (Cancelled, NoSpace):
         if os.path.lexists(dst):
             out({"undo": {"created": dst}})   # the part of it that got there
@@ -358,6 +377,7 @@ def merge(src, dst, job, more):
 def transfer(mode, dest, sources):
     dest = os.path.abspath(dest)
     job = Job(dest, mode)
+    job.sizes = {}
     sources = [os.path.abspath(s).rstrip("/") or "/" for s in sources]
     sizes, files = {}, 0
     for i, src in enumerate(sources):
@@ -369,6 +389,7 @@ def transfer(mode, dest, sources):
         out({"scanning": files})
     folders = [s for s in sources if os.path.isdir(s) and not os.path.islink(s)]
     moves = mode == "move" or (mode == "auto" and all(os.path.lexists(s) and os.lstat(s).st_dev == os.stat(dest).st_dev for s in sources))
+    job.sizes = sizes
     out({"total": sum(b for b, _ in sizes.values()), "files": files, "allFiles": not folders, "move": moves})
     dest_dev = job.dest_dev
     for i, src in enumerate(sources):

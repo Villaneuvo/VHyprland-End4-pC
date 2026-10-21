@@ -378,6 +378,14 @@ Singleton {
     // ---- drag and drop: what's under the pointer, what we're dragging, and the one thing every drop does ----
     property string dragTarget: ""       // a folder path, Fs.trashDir, or "tab:N" (lit up; spring-opens after 800 ms)
     property var dragPaths: []           // paths of a drag that started here (a folder isn't a target for itself)
+    property Item dragProxy: null        // Browser's item that runs drags (it outlives the tile they start from)
+    function startDrag(paths, imageUrl) {
+        if (!dragProxy) return;
+        dragPaths = paths;
+        dragProxy.Drag.mimeData = { "text/uri-list": paths.map(p => uri(p)).join("\r\n") + "\r\n" };
+        dragProxy.Drag.imageSource = imageUrl;
+        dragProxy.Drag.active = true;
+    }
     function dropOn(dest, uris) {
         dragTarget = "";
         const d = dropPaths(uris);
@@ -386,6 +394,14 @@ Singleton {
         const action = dropAction(d.paths, dest);
         if (action === "trash") trash(d.paths);
         else if (action === "transfer") transfer("auto", dest, d.paths);
+    }
+    // The conflict dialog's words: the existing item's kind decides them (a file may meet a folder)
+    function conflictTitle(r) { return (r.isDir ? "Merge Folder “" : "Replace “") + r.name + "”?"; }
+    function conflictMessage(r) {
+        const where = "“" + baseName(r.dest) + "”";
+        if (r.isDir) return "A folder with the same name already exists in " + where + ". Merging asks before replacing any files in it.";
+        return (r.oldIsDir ? "A folder" : "A file") + " with the same name already exists in " + where + "."
+            + (r.canTrash ? "" : "\nThere's no Trash here: the existing " + (r.oldIsDir ? "folder will be deleted." : "file will be overwritten."));
     }
     // Dropped URIs: local files as paths; anything else (web links) only counted
     function dropPaths(uris) {
@@ -401,9 +417,8 @@ Singleton {
         return { paths: paths, ignored: ignored };
     }
     function dropAction(paths, dest) {
-        if (dest === trashDir) return "trash";
-        if (paths.indexOf(dest) >= 0) return "none";   // a folder let go on its own tile
-        return paths.every(p => parentOf(p) === dest) ? "none" : "transfer";
+        if (paths.indexOf(dest) >= 0 || paths.every(p => parentOf(p) === dest)) return "none";   // let go on itself, or where they are
+        return dest === trashDir ? "trash" : "transfer";
     }
     function serversList(cb) { run([ops, "servers", "list"], (text) => cb(lines(text))); }
     function serverRemove(uri) { places(["servers", "remove", uri]); }
@@ -715,7 +730,9 @@ Singleton {
         const s = steps[i], next = (t, c, e) => { if (c) failed(e.trim()); undoSteps(steps, i + 1); };
         // What the job created was ours: to Trash where there is one, deleted where there isn't (servers, /tmp)
         if (s.op === "remove") run(["bash", "-c", "gio trash -- \"$1\" 2>/dev/null || rm -rf -- \"$1\"", "_", s.path], next);
-        else if (s.op === "moveBack") run(["mv", "-n", "-T", "--", s.from, s.to], (t, c, e) => { if (!c) placesMoved([[s.from, s.to]]); next(t, c, e); });
+        // A merged move removed the folder it came from: make it again first
+        else if (s.op === "moveBack") run(["bash", "-c", "mkdir -p -- \"$(dirname -- \"$2\")\" && mv -n -T -- \"$1\" \"$2\"", "_", s.from, s.to],
+                                          (t, c, e) => { if (!c) placesMoved([[s.from, s.to]]); next(t, c, e); });
         else run([ops, "untrash", s.dir, s.name], next);
     }
     function undo() {

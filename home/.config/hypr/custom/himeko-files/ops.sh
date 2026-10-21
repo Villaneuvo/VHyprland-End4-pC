@@ -541,7 +541,7 @@ BUS
     check "transfer: one failed item, the rest goes on" "$(grep -c '"failed": {' "$t/tr/o3")$(cat "$X/lock/fine")$(tail -1 "$t/tr/o3")" '1ok{"done": true, "failed": 1}'
     head -c 30000000 /dev/zero >"$t/tr/slow.bin"   # 30 × 1 MiB blocks at 0.05 s: still copying at 0.6 s
     HF_SLOW_COPY=0.05 "$me" transfer copy "$X" "$t/tr/slow.bin" </dev/null >"$t/tr/o4" & tp=$!; sleep 0.6
-    check "transfer: writes a hidden part file" "$(test -e "$X/.slow.bin.himeko-part" && echo part)$(test -e "$X/slow.bin" || echo none)" "partnone"
+    check "transfer: writes a hidden part file" "$(ls -A "$X" | grep -q "^\.slow\.bin\..*himeko-part$" && echo part)$(test -e "$X/slow.bin" || echo none)" "partnone"
     kill -TERM $tp; wait $tp
     check "transfer: cancel removes the part file" "$(ls -A "$X" | grep -c himeko-part)$(tail -1 "$t/tr/o4")" '0{"cancelled": true}'
     check "transfer: progress lines while copying" "$(( $(grep -c '"progress"' "$t/tr/o4") > 2 ))" "1"
@@ -570,6 +570,28 @@ BUS
     "$me" bookmarks pin "$t/p1"; "$me" bookmarks pin "$t/p2"; "$me" bookmarks pin "$t/p3" --at 1
     check "bookmarks pin --at" "$(sed "s|file://$t/||" "$t/cfg3/gtk-3.0/bookmarks" | tr '\n' ' ')" "p1 p3 p2 "
     unset XDG_CONFIG_HOME
+    # ---- review fixes: Replace's Trash entry, cancel after a rename, two jobs on one name, file vs folder ----
+    export XDG_DATA_HOME=$t/xdg2; R=$t/rf; mkdir -p "$R/s" "$R/d" "$R/other"
+    echo elsewhere >"$R/other/a.txt"; gio trash "$R/other/a.txt"   # a same-name item from another folder is already in Trash
+    echo old1 >"$R/d/a.txt"; echo new1 >"$R/s/a.txt"
+    echo '{"choice": "replace"}' | "$me" transfer copy "$R/d" "$R/s/a.txt" >"$R/o1"
+    n1=$(grep -o '"trash": \[[^]]*\]' "$R/o1" | python3 -I -c 'import json,sys; print(json.loads("{"+sys.stdin.read()+"}")["trash"][1])' 2>/dev/null)
+    check "replace: finds its own Trash entry next to a same-name one" "$(cat "$XDG_DATA_HOME/Trash/files/$n1" 2>/dev/null)" "old1"
+    echo new2 >"$R/s/a.txt"; echo '{"choice": "replace"}' | "$me" transfer copy "$R/d" "$R/s/a.txt" >"$R/o2"
+    n2=$(grep -o '"trash": \[[^]]*\]' "$R/o2" | python3 -I -c 'import json,sys; print(json.loads("{"+sys.stdin.read()+"}")["trash"][1])' 2>/dev/null)
+    check "replace again: the entry is the one just replaced" "$(cat "$XDG_DATA_HOME/Trash/files/$n2" 2>/dev/null)" "new1"
+    mkdir -p "$R/tree/a" "$R/tree/b" "$R/tree/c" "$R/mv"
+    HF_SLOW_COPY=0.4 "$me" transfer move "$R/mv" "$R/tree" </dev/null >"$R/o3" & tp=$!
+    for i in $(seq 40); do grep -q '"total"' "$R/o3" 2>/dev/null && break; sleep 0.05; done; sleep 0.1; kill -TERM $tp; wait $tp
+    check "cancel right after a folder rename still logs the move" "$(test -d "$R/mv/tree" && echo moved)$(grep -c '"undo": {"moved"' "$R/o3")" "moved1"
+    head -c 20000000 /dev/zero >"$R/s/big.bin"; mkdir -p "$R/two"
+    HF_SLOW_COPY=0.03 "$me" transfer copy "$R/two" "$R/s/big.bin" </dev/null >"$R/o4" & a=$!
+    HF_SLOW_COPY=0.03 "$me" transfer copy "$R/two" "$R/s/big.bin" </dev/null >"$R/o5" & b=$!; wait $a $b
+    check "two jobs on one name: both whole, side by side" "$(ls "$R/two" | tr '\n' ' ')$(cmp -s "$R/s/big.bin" "$R/two/big.bin" && cmp -s "$R/s/big.bin" "$R/two/big (2).bin" && echo same)" "big (2).bin big.bin same"
+    mkdir -p "$R/d/b.txt"; echo f >"$R/s/b.txt"
+    echo '{"choice": "skip"}' | "$me" transfer copy "$R/d" "$R/s/b.txt" >"$R/o6"
+    check "file over a folder: the ask says the existing one is a folder" "$(grep -c '"oldIsDir": true' "$R/o6")" "1"
+    unset XDG_DATA_HOME
     exit $fail ;;
 *) echo "usage: see the header of $0" >&2; exit 2 ;;
 esac

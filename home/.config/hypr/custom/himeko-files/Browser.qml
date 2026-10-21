@@ -72,6 +72,7 @@ FocusScope {
         newTab(startPath); view.forceActiveFocus();
         if (startAddress) openAddress(startAddress);
         Fs.run([Fs.ops, "net", "schemes"], (text) => root.schemes = Fs.lines(text));
+        Fs.dragProxy = dragProxy;
     }
 
     readonly property string title: tab ? tab.name : "Files"
@@ -435,7 +436,7 @@ FocusScope {
                     id: viewDrop
                     z: -1
                     anchors.fill: parent
-                    enabled: root.tab !== null && !root.tab.virtual
+                    enabled: root.tab !== null && !root.tab.virtual && !root.tab.inTrash   // into Trash only through the Trash row
                     keys: ["text/uri-list"]
                     onEntered: Fs.dragTarget = root.tab.path
                     onExited: if (Fs.dragTarget === root.tab.path) Fs.dragTarget = ""
@@ -608,7 +609,7 @@ FocusScope {
                                         // A crumb takes drops into its folder, lights up, and opens after a short hover
                                         DropArea {
                                             anchors.fill: parent
-                                            enabled: !modelData.ellipsis && modelData.path.startsWith("/")
+                                            enabled: !modelData.ellipsis && modelData.path.startsWith("/") && !(modelData.path + "/").startsWith(Fs.trashDir + "/")
                                             keys: ["text/uri-list"]
                                             onEntered: (drag) => { if (Fs.dragPaths.indexOf(modelData.path) >= 0) drag.accepted = false; else Fs.dragTarget = modelData.path; }
                                             onExited: if (Fs.dragTarget === modelData.path) Fs.dragTarget = ""
@@ -785,7 +786,7 @@ FocusScope {
                             keys: ["text/uri-list"]
                             onEntered: Fs.dragTarget = "tab:" + tabItem.index
                             onExited: if (Fs.dragTarget === "tab:" + tabItem.index) Fs.dragTarget = ""
-                            onDropped: (drop) => { if (!tabItem.modelData.virtual) Fs.dropOn(tabItem.modelData.path, drop.urls); drop.accept(Qt.CopyAction); }
+                            onDropped: (drop) => { if (!tabItem.modelData.virtual && !tabItem.modelData.inTrash) Fs.dropOn(tabItem.modelData.path, drop.urls); drop.accept(Qt.CopyAction); }
                         }
                         Rectangle {
                             anchors.fill: parent; radius: height / 2; color: "transparent"
@@ -1095,6 +1096,7 @@ FocusScope {
         function newFolder(): void { Fs.newFolder(root.tab.path); }
         function pasteHere(paths: string): void { Fs.transfer("copy", root.tab.path, paths.split("|")); }
         function jobsOpen(on: bool): void { root.jobsOpen = on; }
+        function jobRowsBuilt(): int { return root.jobRowsBuilt; }
         // Drops and drag hovers, as a pointer would do them (a real drag can't be faked off-screen)
         function dropUris(target: string, uris: string): void { Fs.dropOn(target === "trash" ? Fs.trashDir : target, uris.split("|")); }
         function dragHover(target: string): void { Fs.dragTarget = target; }
@@ -1224,7 +1226,8 @@ FocusScope {
 
     // ---- jobs: the operations popover, and closing while they run ----
     property bool jobsOpen: false
-    onJobsOpenChanged: if (jobsOpen) { const p = jobsGlass.mapToItem(root, jobsGlass.width, jobsGlass.height + 8); jobsPop.x = Math.max(8, p.x - jobsPop.width); jobsPop.y = p.y; }
+    property int jobRowsBuilt: 0          // tests: popover rows must survive progress updates (or clicks get lost)
+    function placeJobsPop() { const p = jobsGlass.mapToItem(root, jobsGlass.width, jobsGlass.height + 8); jobsPop.x = Math.max(8, p.x - jobsPop.width); jobsPop.y = p.y; }
     function jobSubtitle(j) {
         if (j.state === "done") return "Done";
         if (j.state === "cancelled") return "Cancelled";
@@ -1259,7 +1262,15 @@ FocusScope {
         conflicts = conflicts.slice(1);
         try { r.reply(a); } catch (e) {}   // its transfer may have just ended
     }
-    // ---- dragging: spring-open what the pointer rests on, scroll at the edges ----
+    // ---- dragging: the drag runs here (Fs.startDrag), spring-opens what the pointer rests on, scrolls at the edges ----
+    Item {
+        id: dragProxy
+        width: 1; height: 1; opacity: 0
+        Drag.dragType: Drag.Automatic
+        Drag.supportedActions: Qt.CopyAction | Qt.MoveAction
+        Drag.proposedAction: Qt.MoveAction
+        Drag.onDragFinished: (action) => { dragProxy.Drag.active = false; Fs.dragPaths = []; Fs.dragTarget = ""; }
+    }
     property int autoScroll: 0           // -1 up, 1 down, while a drag sits at the view's edge
     Timer {
         interval: 16; repeat: true; running: root.autoScroll !== 0   // runs only while a drag rests at an edge
@@ -1287,6 +1298,7 @@ FocusScope {
     Glass {
         id: jobsPop
         visible: root.jobsOpen && Fs.jobs.length > 0
+        onVisibleChanged: if (visible) Qt.callLater(root.placeJobsPop)   // under the button, once it has been laid out
         backdrop: view
         tint: Theme.alpha(Theme.surfaceHigh, 0.97)
         radius: 18
@@ -1302,10 +1314,14 @@ FocusScope {
                 width: parent.width
                 spacing: 2
                 Repeater {
-                    model: Fs.jobs
+                    // A count, not the array: Fs.jobs is a new array on every progress line, and an array model would
+                    // rebuild every row each time (clicks on ✕ would get lost); rows read their job by index
+                    model: Fs.jobs.length
                     delegate: Rectangle {
                         id: jobRow
-                        required property var modelData
+                        required property int index
+                        readonly property var modelData: Fs.jobs[index] ?? ({ names: [], kind: "", state: "", failed: [], made: [], bytes: 0, total: 0 })
+                        Component.onCompleted: root.jobRowsBuilt++
                         readonly property bool live: modelData.state === "running" || modelData.state === "scanning"
                         width: jobsCol.width
                         implicitHeight: jobInfo.implicitHeight + 24

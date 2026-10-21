@@ -12,7 +12,6 @@ FocusScope {
     property bool all: false
 
     readonly property bool folder: req.isDir
-    readonly property string destName: Fs.baseName(req.dest)   // a server's top folder shows as its name
     function choose(choice) { answered({ choice: choice, all: all }); }
     function cancel() { answered({ cancel: true }); }
     // Test hook (Browser IPC)
@@ -48,7 +47,7 @@ FocusScope {
                 id: title
                 Layout.fillWidth: true
                 horizontalAlignment: Text.AlignHCenter
-                text: root.folder ? "Merge Folder “" + root.req.name + "”?" : "Replace “" + root.req.name + "”?"
+                text: Fs.conflictTitle(root.req)
                 textFormat: Text.PlainText
                 wrapMode: Text.Wrap
                 color: Theme.text; font.family: Theme.font; font.pixelSize: 17; font.weight: 650
@@ -57,9 +56,7 @@ FocusScope {
                 id: message
                 Layout.fillWidth: true
                 horizontalAlignment: Text.AlignHCenter
-                text: (root.folder ? "A folder with the same name already exists in “" + root.destName + "”. Merging asks before replacing any files in it."
-                                   : "A file with the same name already exists in “" + root.destName + "”.")
-                      + (!root.folder && !root.req.canTrash ? "\nThere's no Trash here: the existing file will be overwritten." : "")
+                text: Fs.conflictMessage(root.req)
                 textFormat: Text.PlainText
                 wrapMode: Text.Wrap
                 color: Theme.textDim; font.family: Theme.font; font.pixelSize: 13
