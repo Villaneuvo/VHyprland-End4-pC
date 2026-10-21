@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # File operations for Himeko Files. Never overwrites: clashing names get " (2)", " (3)"...
 # Prints the paths/URIs it created so the app can offer Undo.
-#   ops.sh paste copy|move DEST SRC...   -> one line per SRC: the created path, empty when skipped
 #   ops.sh trash PATH...                 -> one trash:/// URI per line (for `ops.sh restore`)
 #   ops.sh restore URI...
 #   ops.sh mkdir DIR NAME                -> created path
@@ -73,23 +72,6 @@ untrash) exec python3 -I "$(dirname -- "$0")/transfer.py" untrash "$@" ;;
 transfer) exec python3 -I "$(dirname -- "$0")/transfer.py" "$@" ;;
 net) exec python3 -I "$(dirname -- "$0")/network.py" "$@" ;;
 placesmoved) exec python3 -I "$(dirname -- "$0")/places.py" moved "$@" ;;
-paste)
-    mode=$1 dest=$2; shift 2
-    # The app pairs line N with SRC N (undo, stars, pins), so a skipped item still prints its (empty) line
-    for src in "$@"; do
-        src=${src%/} target=
-        if ! [ -e "$src" ] && ! [ -L "$src" ]; then :
-        # Moving into the folder it is already in, or a folder into itself: nothing to do
-        elif [ "$mode" = move ] && [ "$(dirname -- "$src")" = "$dest" ]; then :
-        elif case "$dest/" in "$src"/*) true ;; *) false ;; esac; then echo "skip: can't put a folder inside itself: $src" >&2
-        else
-            target=$(unique "$dest" "$(basename -- "$src")")
-            # Servers (gvfs FUSE) can't take owners and modes: cp -a stops there, plain cp -r works
-            case "$src/ $dest/" in *"${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/gvfs/"*) cpflags=-r ;; *) cpflags=-a ;; esac
-            if [ "$mode" = move ]; then mv -n -- "$src" "$target"; else cp "$cpflags" -- "$src" "$target"; fi || target=
-        fi
-        printf '%s\n' "$target"
-    done ;;
 trash)
     export LC_ALL=C # sort and comm must agree on the order
     before=$(gio trash --list 2>/dev/null | cut -f1 | sort)
@@ -265,12 +247,6 @@ selftest)
     check "unique, free name" "$(unique "$t/a" new.txt)" "$t/a/new.txt"
     check "unique, clash" "$(unique "$t/a" f.txt)" "$t/a/f (2).txt"
     check "unique, .tar.gz" "$(unique "$t/a" x.tar.gz)" "$t/a/x (2).tar.gz"
-    check "copy keeps both" "$("$me" paste copy "$t/b" "$t/a/f.txt")" "$t/b/f (2).txt"
-    check "copied content" "$(cat "$t/b/f (2).txt")" "x"
-    check "move" "$("$me" paste move "$t/b" "$t/a/x.tar.gz")" "$t/b/x.tar.gz"
-    check "moved away" "$([ -e "$t/a/x.tar.gz" ] && echo still || echo gone)" "gone"
-    check "move into same folder is a no-op" "$("$me" paste move "$t/b" "$t/b/f.txt")" ""
-    check "folder into itself refused" "$("$me" paste copy "$t/a" "$t/a" 2>/dev/null)" ""
     check "mkdir clash" "$("$me" mkdir "$t" a)" "$t/a (2)"
     check "zip" "$("$me" zip "$t/a" pack.zip f.txt)" "$t/a/pack.zip"
     check "extract" "$("$me" extract "$t/a/pack.zip")" "$t/a/pack"
@@ -474,9 +450,7 @@ import os; os.replace(sys.argv[1]+'.tmp', sys.argv[1])" "$t/recent.xbel"; done )
     check "starred: parallel adds all land" "$(grep -c '/pl/p[0-9]$' "$HF_STARRED")" "8"
     unset HF_RECENT HF_STARRED
     # ---- review fixes: a skipped item keeps its place in paste's output; batch moved / recent remove ----
-    mkdir -p "$t/pm/d" "$t/pm/s"; : >"$t/pm/d/x"; : >"$t/pm/s/y"
-    out=$("$me" paste move "$t/pm/d" "$t/pm/d/x" "$t/pm/s/y"; echo .)
-    check "paste: one line per source, empty when skipped" "$out" $'\n'"$t/pm/d/y"$'\n.'
+    mkdir -p "$t/pm/d" "$t/pm/s"
     export HF_RECENT=$t/pm.xbel HF_STARRED=$t/state/pm XDG_CONFIG_HOME=$t/pmcfg
     : >"$t/pm/a"; : >"$t/pm/b"; "$me" starred add "$t/pm/a" "$t/pm/b"; "$me" recent add "$t/pm/a"; "$me" recent add "$t/pm/b"
     mv "$t/pm/a" "$t/pm/a2"; mv "$t/pm/b" "$t/pm/b2"
@@ -529,7 +503,7 @@ BUS
                           "{\"user\": \"tester\", \"password\": \"secret\", \"save\": \"never\"}" | "$me" net mount "$a/sub" >"$t/m1"
             "$me" net mounts | cut -f2 >"$t/m2"
             p=$(tail -1 "$t/m1" | python3 -I -c "import json,sys; print(json.load(sys.stdin)[\"path\"])")
-            ls "$p/.." >"$t/m3"; "$me" paste copy "$p" "$t/up.txt" >"$t/m4"; cat "$p/up.txt" >"$t/m4c"
+            ls "$p/.." >"$t/m3"; "$me" transfer copy "$p" "$t/up.txt" </dev/null >"$t/m4"; cat "$p/up.txt" >"$t/m4c"
             echo up2 >"$t/up.txt"; echo "{\"choice\": \"replace\"}" | "$me" transfer copy "$p" "$t/up.txt" >"$t/m9"
             echo "{\"choice\": 1}" | HF_ASK_QUESTION=1 "$me" net mount "$a/" >"$t/m5"
             "$me" net unmount "$a/"; "$me" net mounts | wc -l >"$t/m6"
@@ -540,7 +514,7 @@ BUS
         check "net mount: prints the folder's FUSE path" "$(tail -1 "$t/m1" | grep -c "/gvfs/dav:host=127.0.0.1,port=$port,ssl=false/sub\"")" "1"
         check "net mounts: lists it" "$(cat "$t/m2")" "dav://127.0.0.1:$port/"
         check "net: the FUSE folder lists the server" "$(tr '\n' ' ' <"$t/m3")" "a.txt sub "
-        check "paste: copies onto a server" "$(grep -c '/sub/up.txt$' "$t/m4")$(cat "$t/m4c")" "1up"
+        check "transfer: copies onto a server, with progress" "$(grep -c '"made": .*/sub/up.txt"\]' "$t/m4")$(grep -c '"total"' "$t/m4")$(cat "$t/m4c")" "11up"
         check "transfer onto a server: no Trash there, Replace overwrites" "$(grep -c '"canTrash": false' "$t/m9")$(cat "$t/dav/sub/up.txt")" "1up2"
         check "net mount: question, then cancel" "$(head -1 "$t/m5" | grep -c '"ask": "question"')$(tail -1 "$t/m5")" '1{"error": "Cancelled"}'
         check "net unmount: gone" "$(cat "$t/m6")" "0"

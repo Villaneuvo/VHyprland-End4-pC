@@ -149,6 +149,8 @@ FocusScope {
         function onCreated(path) { root.tab.selectPath(path); root.renamingPath = path; }
         function onNetAsk(req) { root.asks = root.asks.concat([req]); }
         function onNetAskGone(owner) { root.asks = root.asks.filter(r => r.owner !== owner); }
+        function onTransferAsk(req) { root.conflicts = root.conflicts.concat([req]); }
+        function onTransferAskGone(owner) { root.conflicts = root.conflicts.filter(r => r.owner !== owner); }
         // A server went away (unmounted here or elsewhere, or dropped): tabs inside it go to Network
         function onDisconnected(m) {
             const inside = root.tabs.filter(t => t.path === m.path || t.path.startsWith(m.path + "/"));
@@ -1018,7 +1020,10 @@ FocusScope {
         function netRows(): string { return networkPage.item ? JSON.stringify(networkPage.item.rows()) : "[]"; }
         function netAddressHelp(on: bool): void { root.addressHelp = on; }
         function newFolder(): void { Fs.newFolder(root.tab.path); }
-        function pasteHere(paths: string): void { Fs.doPaste("copy", root.tab.path, paths.split("|")); }
+        function pasteHere(paths: string): void { Fs.transfer("copy", root.tab.path, paths.split("|")); }
+        function jobsState(): string { return JSON.stringify(Fs.jobs); }
+        function cancelJob(id: int): void { Fs.cancelJob(id); }
+        function conflictAnswer(choice: string, all: bool): void { root.answerConflict(choice === "cancel" ? { cancel: true } : { choice: choice, all: all }); }
         function renameItem(name: string, to: string): void { const it = root.tab.items.find(x => x.name === name); if (it) Fs.rename(it.path, to); }
         function del(): void { root.trashSelection(); }
         function editPath(on: bool): void { root.editingPath = on; }
@@ -1135,6 +1140,14 @@ FocusScope {
         onLoaded: item.forceActiveFocus()
     }
 
+    // ---- name conflicts from transfers, one at a time (ConflictDialog shows conflicts[0]) ----
+    property var conflicts: []
+    function answerConflict(a) {
+        const r = conflicts[0];
+        if (!r) return;
+        conflicts = conflicts.slice(1);
+        try { r.reply(a); } catch (e) {}   // its transfer may have just ended
+    }
     property bool addressHelp: false
     property var schemes: []            // what gvfs can connect to here (the address help lists only those)
 

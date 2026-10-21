@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Copies and moves for Himeko Files (ops.sh transfer copy|move|auto DEST SRC…), as JSON lines on stdout:
-  {"scanning": n} … {"total": bytes, "files": n}, then {"progress": {"bytes", "file"}} at most every 150 ms
+  {"scanning": n} … {"total": bytes, "files": n, "allFiles", "move"}, then {"progress": {"bytes", "file"}} at most every 150 ms
   {"ask": "conflict", name, dest, isDir, canTrash, old: {size, mtime}, new: {size, mtime}, more} on a taken name,
     answered by one line on stdin: {"choice": "skip"|"keep"|"replace"|"merge", "all": bool} or {"cancel": true}
   {"made": [src, created]} | {"skipped": src} per source; {"failed": {"path", "error"}} per failed item
@@ -367,7 +367,9 @@ def transfer(mode, dest, sources):
             sizes[src] = (0, 0)
         files += sizes[src][1]
         out({"scanning": files})
-    out({"total": sum(b for b, _ in sizes.values()), "files": files})
+    folders = [s for s in sources if os.path.isdir(s) and not os.path.islink(s)]
+    moves = mode == "move" or (mode == "auto" and all(os.path.lexists(s) and os.lstat(s).st_dev == os.stat(dest).st_dev for s in sources))
+    out({"total": sum(b for b, _ in sizes.values()), "files": files, "allFiles": not folders, "move": moves})
     dest_dev = job.dest_dev
     for i, src in enumerate(sources):
         if cancelled:

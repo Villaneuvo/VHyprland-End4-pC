@@ -34,9 +34,25 @@ ShellRoot {
 
         check("withoutPassword: a typed password never travels or gets saved", ["ftp://me:s3cret@host/x", "sftp://me@host/", "smb://nas/share", "ftp://[::1]:21/", "dav://a:b:c@h:8080/"].map(u => Fs.withoutPassword(u)),
               ["ftp://me@host/x", "sftp://me@host/", "smb://nas/share", "ftp://[::1]:21/", "dav://a@h:8080/"]);
+        // ---- transfer rules ----
+        check("jobTitle: one", Fs.jobTitle({ kind: "copy", names: ["a.txt"], dest: "/h/Pictures", allFiles: true }), "Copying “a.txt” to “Pictures”");
+        check("jobTitle: files", Fs.jobTitle({ kind: "copy", names: ["a", "b"], dest: "/h/Pictures", allFiles: true }), "Copying 2 files to “Pictures”");
+        check("jobTitle: items", Fs.jobTitle({ kind: "move", names: ["a", "b", "c"], dest: "/h/Pictures", allFiles: false }), "Moving 3 items to “Pictures”");
+        check("jobTitle: trash", Fs.jobTitle({ kind: "trash", names: ["a", "b", "c"] }), "Moving 3 items to Trash");
+        check("jobTitle: extract", Fs.jobTitle({ kind: "extract", names: ["x.zip"] }), "Extracting “x.zip”");
+        check("jobProgress: preparing", Fs.jobProgress(0, 0, 0), "Preparing…");
+        check("jobProgress: no estimate yet", Fs.jobProgress(12582912, 3650722202, 1000), "12 MB of 3.4 GB");
+        check("jobProgress: minutes", Fs.jobProgress(1288490189, 3650722202, 60000), "1.2 GB of 3.4 GB — 2 minutes left");
+        check("jobProgress: under a minute", Fs.jobProgress(3000000000, 3650722202, 60000), "2.8 GB of 3.4 GB — less than a minute left");
+        check("undoPlan", Fs.undoPlan([{ created: "/d/a" }, { moved: ["/s/b", "/d/b"] }, { replaced: "/d/c", trash: ["/T", "c.2"] }]),
+              [{ op: "untrash", dir: "/T", name: "c.2" }, { op: "moveBack", from: "/d/b", to: "/s/b" }, { op: "remove", path: "/d/a" }]);
+        check("dropPaths", Fs.dropPaths(["file:///h/a%20b.txt", "https://x.org/i.png", "file:///h/dir/", "file://localhost/h/c"]),
+              { paths: ["/h/a b.txt", "/h/dir", "/h/c"], ignored: 1 });
+        check("dropAction: same folder", Fs.dropAction(["/h/d/a", "/h/d/b"], "/h/d"), "none");
+        check("dropAction: trash", Fs.dropAction(["/h/d/a"], Fs.trashDir), "trash");
+        check("dropAction: elsewhere", Fs.dropAction(["/h/d/a"], "/h/e"), "transfer");
+
         // ---- places rules ----
-        check("pastePairs: skipped source keeps its place", Fs.pastePairs("\n/d/y\n", ["/d/x", "/s/y"]), [["/s/y", "/d/y"]]);
-        check("pastePairs: all moved", Fs.pastePairs("/d/a\n/d/b (2)\n", ["/s/a", "/t/b"]), [["/s/a", "/d/a"], ["/t/b", "/d/b (2)"]]);
         const bm = Fs.parseBookmarks("file:///home/u/Documents\nsftp://host/srv Server\nfile:///home/u/Proj%20%231%20%25%20%E2%9C%A8 Projects ✨\n\n");
         check("bookmarks: count", bm.length, 3);
         check("bookmarks: plain", [bm[0].path, bm[0].label, bm[0].name], ["/home/u/Documents", "", "Documents"]);

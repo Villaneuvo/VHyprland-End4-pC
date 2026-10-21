@@ -160,8 +160,6 @@ Singleton {
     function renamePin(path, label) { places(["bookmarks", "rename", path, label]); }
     function movePin(path, d) { places(["bookmarks", "move", path, String(d)]); }
     function placesMoved(pairs) { if (pairs.length) run([ops, "placesmoved"].concat(...pairs), null); }   // [[from, to]]
-    // ops.sh paste prints one line per source (empty = skipped): [[src, created]] for the ones that happened
-    function pastePairs(text, paths) { return text.split("\n").slice(0, paths.length).map((t, i) => [paths[i], t]).filter(p => p[1]); }
 
     // ---- network: gvfs mounts, browsed through gvfs' FUSE folder; network.py talks to gvfs ----
     readonly property string gvfsRoot: Quickshell.env("XDG_RUNTIME_DIR") + "/gvfs"
@@ -231,10 +229,11 @@ Singleton {
         id: talkComp
         Process {
             property var lineCb
+            property var exitCb: null
             property int owner
             stdinEnabled: true
             stdout: SplitParser { onRead: (line) => lineCb(line) }
-            onExited: { root.netAskGone(owner); destroy(); }
+            onExited: { if (exitCb) exitCb(); root.netAskGone(owner); root.transferAskGone(owner); destroy(); }
         }
     }
     property int talks: 0
@@ -274,6 +273,117 @@ Singleton {
     function listDir(dir, cb) {
         return run(["find", dir, "-mindepth", "1", "-maxdepth", "1", "-printf", "%p\\t%Y\\t%s\\t%T@\\n"], (text) =>
             cb(placeItems(lines(text).map(l => { const f = l.split("\t"); return [f[0], f[1] === "d" ? 1 : 0, f[2], Math.floor(f[3])].join("\t"); }).join("\n"))));
+    }
+
+    // ---- jobs: copies and moves (transfer.py), Trash, Delete, Compress, Extract; the operations button shows them ----
+    property var jobs: []                // [{ id, kind, names, dest, bytes, total, files, allFiles, started, state, failed, made, error }]
+    readonly property int jobsActive: jobs.filter(j => j.state === "scanning" || j.state === "running").length
+    property bool unattended: false      // the window is gone: transfers answer conflicts with Keep Both themselves
+    property int jobSeq: 0
+    property var jobProcs: ({})          // job id -> its transfer.py Process (for Cancel)
+    signal transferAsk(var req)          // a name conflict: the ask + reply(answer) + owner + jobId
+    signal transferAskGone(int owner)    // that transfer ended: its asks can't be answered any more
+    function addJob(j) {
+        j.id = ++jobSeq; j.started = Date.now(); j.bytes = 0; j.total = 0; j.files = 0; j.failed = []; j.made = [];
+        jobs = jobs.concat([j]);
+        return j.id;
+    }
+    function setJob(id, patch) { jobs = jobs.map(j => j.id === id ? Object.assign({}, j, patch) : j); }
+    function dismissJob(id) { jobs = jobs.filter(j => j.id !== id); }
+    Component { id: fadeComp; Timer { property int jobId; interval: 3000; running: true; onTriggered: { root.dismissJob(jobId); destroy(); } } }
+    function endJob(id, patch) {
+        setJob(id, patch);
+        if (patch.state === "done") fadeComp.createObject(root, { jobId: id });   // failed ones stay until dismissed
+    }
+    function cancelJob(id) {
+        const p = jobProcs[id];
+        if (p) p.running = false;   // SIGTERM: transfer.py stops after the current block and cleans its part file
+    }
+    // A copy or move through transfer.py: progress, conflicts (asked through transferAsk), an undo log
+    function transfer(mode, dest, paths) {
+        if (!paths.length) return;
+        const id = addJob({ kind: mode === "move" ? "move" : "copy", names: paths.map(p => p.slice(p.lastIndexOf("/") + 1)), dest: dest, allFiles: false, state: "scanning" });
+        const owner = ++talks, log = [], made = [], failedItems = [];
+        const p = talkComp.createObject(root, { command: [ops, "transfer", mode, dest].concat(paths), owner: owner });
+        let ended = false;
+        const end = (patch) => {
+            ended = true;
+            delete root.jobProcs[id];
+            if (log.length) undoAction = { kind: "log", steps: undoPlan(log) };
+            const moved = log.filter(u => u.moved).map(u => u.moved);
+            if (moved.length) placesMoved(moved);   // stars, pins and recent entries follow
+            endJob(id, Object.assign({ made: made, failed: failedItems }, patch));
+            const verb = jobs.find(j => j.id === id)?.kind === "move" ? "Moved " : "Copied ";
+            if (patch.state === "done" && made.length) toast(verb + made.length + (made.length === 1 ? " item" : " items"), log.length > 0);
+        };
+        p.lineCb = (line) => {
+            let o;
+            try { o = JSON.parse(line); } catch (e) { return; }
+            if (o.ask) {
+                if (root.unattended) return p.write(JSON.stringify({ choice: "keep", all: true }) + "\n");
+                return root.transferAsk(Object.assign(o, { owner: owner, jobId: id, reply: (a) => p.write(JSON.stringify(a) + "\n") }));
+            }
+            if (o.scanning !== undefined) setJob(id, { files: o.scanning });
+            else if (o.total !== undefined) setJob(id, { total: o.total, files: o.files, allFiles: o.allFiles, kind: o.move ? "move" : "copy", state: "running", started: Date.now() });
+            else if (o.progress) setJob(id, { bytes: o.progress.bytes });
+            else if (o.undo) log.push(o.undo);
+            else if (o.made) made.push(o.made);
+            else if (o.failed) failedItems.push(o.failed);
+            else if (o.done) end({ state: failedItems.length ? "failed" : "done" });
+            else if (o.cancelled) end({ state: "cancelled" });
+            else if (o.error) { end({ state: "failed", error: o.error }); failed(o.error); }
+        };
+        p.exitCb = () => { if (!ended) end({ state: "failed", error: "The transfer stopped unexpectedly" }); };
+        jobProcs[id] = p;
+        p.running = true;
+    }
+    // A job without progress (Trash, Delete, Compress, Extract): just "running" until its command returns
+    function quickJob(kind, names, dest, cmd, cb) {
+        const id = addJob({ kind: kind, names: names, dest: dest || "", state: "running" });
+        run(cmd, (text, code, err) => { endJob(id, { state: code ? "failed" : "done", error: code ? err.trim() : "" }); cb(text, code, err); });
+    }
+
+    // ---- job rules (pure, see selftest.qml) ----
+    function baseName(p) { const m = netMountOf(p, netMounts); return m && m.path === p ? m.name : p.slice(p.lastIndexOf("/") + 1) || p; }
+    function jobTitle(j) {
+        const n = j.names.length, one = n === 1 ? "“" + j.names[0] + "”" : "";
+        const count = (noun) => one || n + " " + noun;
+        if (j.kind === "copy" || j.kind === "move")
+            return (j.kind === "copy" ? "Copying " : "Moving ") + count(j.allFiles ? "files" : "items") + " to “" + baseName(j.dest) + "”";
+        if (j.kind === "trash") return "Moving " + count("items") + " to Trash";
+        if (j.kind === "delete") return "Deleting " + count("items");
+        if (j.kind === "compress") return "Compressing " + count("items");
+        return "Extracting " + count("items");
+    }
+    function jobProgress(done, total, elapsed) {
+        if (!total) return "Preparing…";
+        const head = size(done) + " of " + size(total);
+        if (elapsed < 2000 || done <= 0) return head;
+        const left = (total - done) / (done / elapsed) / 1000, n = (v, u) => v + " " + u + (v === 1 ? "" : "s");
+        return head + " — " + (left < 60 ? "less than a minute" : left < 3600 ? n(Math.round(left / 60), "minute") : n(Math.round(left / 3600), "hour")) + " left";
+    }
+    // transfer.py's undo log, newest first: what Undo does, step by step
+    function undoPlan(log) {
+        return log.slice().reverse().map(u => u.created ? { op: "remove", path: u.created }
+            : u.moved ? { op: "moveBack", from: u.moved[1], to: u.moved[0] }
+            : { op: "untrash", dir: u.trash[0], name: u.trash[1] });
+    }
+    // Dropped URIs: local files as paths; anything else (web links) only counted
+    function dropPaths(uris) {
+        const paths = [];
+        let ignored = 0;
+        for (const u of uris) {
+            const s = String(u), m = /^file:\/\/(?:localhost)?(\/.*)$/i.exec(s);
+            let path = null;
+            if (m) try { path = decodeURIComponent(m[1]); } catch (e) {}
+            if (path === null) { if (s.trim()) ignored++; continue; }
+            paths.push(path.length > 1 ? path.replace(/\/+$/, "") : path);
+        }
+        return { paths: paths, ignored: ignored };
+    }
+    function dropAction(paths, dest) {
+        if (dest === trashDir) return "trash";
+        return paths.every(p => parentOf(p) === dest) ? "none" : "transfer";
     }
     function serversList(cb) { run([ops, "servers", "list"], (text) => cb(lines(text))); }
     function serverRemove(uri) { places(["servers", "remove", uri]); }
@@ -511,40 +621,29 @@ Singleton {
     }
     function paste(dest) {
         // Our own clipboard first; otherwise files another app (Dolphin, Chrome...) put on the clipboard
-        if (clip.paths.length > 0) return doPaste(clip.mode, dest, clip.paths);
+        if (clip.paths.length > 0) {
+            const c = clip;
+            if (c.mode === "move") clip = { mode: "", paths: [] };
+            return transfer(c.mode === "move" ? "move" : "copy", dest, c.paths);
+        }
         run(["wl-paste", "--no-newline", "--type", "text/uri-list"], (text, code) => {
             const paths = text.split(/\r?\n/).filter(l => l.startsWith("file://")).map(l => decodeURIComponent(l.slice(7)));
             if (code || paths.length === 0) return root.failed("Nothing to paste");
-            doPaste("copy", dest, paths);
-        });
-    }
-    function doPaste(mode, dest, paths) {
-        toast((mode === "move" ? "Moving " : "Copying ") + paths.length + (paths.length === 1 ? " item…" : " items…"), false);
-        run([ops, "paste", mode, dest].concat(paths), (text, code, err) => {
-            const pairs = pastePairs(text, paths), made = pairs.map(p => p[1]);
-            if (mode === "move" && made.length) {
-                undoAction = { kind: "move", pairs: pairs.map(p => [p[1], p[0]]) };
-                placesMoved(pairs);   // stars, pins and recent entries follow
-                clip = { mode: "", paths: [] };
-            } else if (made.length) {
-                undoAction = { kind: "copy", paths: made };
-            }
-            if (err.trim()) failed(err.trim());
-            if (made.length) toast((mode === "move" ? "Moved " : "Copied ") + made.length + (made.length === 1 ? " item" : " items"), true);
+            transfer("copy", dest, paths);
         });
     }
 
     // ---- operations with undo ----
     property var undoAction: null
     function trash(paths) {
-        run([ops, "trash"].concat(paths), (text, code, err) => {
+        quickJob("trash", paths.map(p => p.slice(p.lastIndexOf("/") + 1)), "", [ops, "trash"].concat(paths), (text, code, err) => {
             if (code) return failed("Couldn't move to Trash: " + (err.trim() || "unknown error"));
             undoAction = { kind: "trash", uris: lines(text) };
             toast("Moved " + paths.length + (paths.length === 1 ? " item" : " items") + " to Trash", true);
         });
     }
     function deleteForever(paths) {
-        run(["rm", "-rf", "--"].concat(paths), (t, code, err) => {
+        quickJob("delete", paths.map(p => p.slice(p.lastIndexOf("/") + 1)), "", ["rm", "-rf", "--"].concat(paths), (t, code, err) => {
             if (code) return failed(err.trim());
             undoAction = null;
             toast("Deleted " + paths.length + (paths.length === 1 ? " item" : " items"), false);
@@ -576,25 +675,34 @@ Singleton {
     function compress(dir, paths) {
         const names = paths.map(p => p.slice(p.lastIndexOf("/") + 1));
         const name = (paths.length === 1 ? names[0] : "Archive") + ".zip";
-        toast("Compressing…", false);
-        run([ops, "zip", dir, name].concat(names), (text, code, err) => {
+        quickJob("compress", names, dir, [ops, "zip", dir, name].concat(names), (text, code, err) => {
             if (code) return failed(err.trim() || "Couldn't compress");
             undoAction = { kind: "copy", paths: lines(text) };
             toast("Created " + name, true);
         });
     }
     function extract(path) {
-        toast("Extracting…", false);
-        run([ops, "extract", path], (text, code, err) => {
+        quickJob("extract", [path.slice(path.lastIndexOf("/") + 1)], parentOf(path), [ops, "extract", path], (text, code, err) => {
             if (code) return failed(err.trim() || "Couldn't extract");
             undoAction = { kind: "copy", paths: lines(text) };
             toast("Extracted", true);
         });
     }
+    // Undo of a transfer: its log's steps one after another (order matters: a replaced file's copy goes before the
+    // original comes back). Servers have no Trash: what we put there is deleted
+    function undoSteps(steps, i) {
+        if (i >= steps.length) return toast("Undone", false);
+        const s = steps[i], next = (t, c, e) => { if (c) failed(e.trim()); undoSteps(steps, i + 1); };
+        // What the job created was ours: to Trash where there is one, deleted where there isn't (servers, /tmp)
+        if (s.op === "remove") run(["bash", "-c", "gio trash -- \"$1\" 2>/dev/null || rm -rf -- \"$1\"", "_", s.path], next);
+        else if (s.op === "moveBack") run(["mv", "-n", "-T", "--", s.from, s.to], (t, c, e) => { if (!c) placesMoved([[s.from, s.to]]); next(t, c, e); });
+        else run([ops, "untrash", s.dir, s.name], next);
+    }
     function undo() {
         const a = undoAction;
         if (!a) return;
         undoAction = null;
+        if (a.kind === "log") return undoSteps(a.steps, 0);
         if (a.kind === "trash") run([ops, "restore"].concat(a.uris), (t, c, e) => c ? failed(e.trim()) : toast("Restored", false));
         else if (a.kind === "rename") run(["mv", "-n", "-T", "--", a.from, a.to], (t, c, e) => { if (c) return failed(e.trim()); placesMoved([[a.from, a.to]]); toast("Rename undone", false); });
         else if (a.kind === "move") {
