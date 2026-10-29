@@ -119,6 +119,8 @@ install_ii() {
     (cd "$DOTS" && ./setup install --skip-alldeps -f)
     # Ubuntu's Qt 6.10 has no FluentWinUI3 style; ii fails to load without this
     sed -i '/^import QtQuick.Controls.FluentWinUI3$/d' "$HOME/.config/quickshell/ii/modules/waffle/looks/WTextField.qml"
+    # Hyprland 0.57 caps decoration.shadow.render_power at 4; dots-hyprland sets 10 (a config error at every start)
+    sed -i 's/render_power = 10,/render_power = 4,/' "$HOME/.config/hypr/hyprland/general.lua"
 }
 
 install_end4pc() {

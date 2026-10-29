@@ -167,7 +167,7 @@ Ubuntu disables hibernation. `./enable-hibernate.sh` turns it on:
 | apt packages from `packages.txt` | Everything dots-hyprland's Arch packages would pull in, mapped to Ubuntu names. Removes Ubuntu's `libudis86-0` first: the PPA's `libudis86.1` clashes with it. |
 | Builds Quickshell at the commit dots-hyprland pins | Not packaged for Ubuntu. Built with Ubuntu's QML path and without the crash handler (no `cpptrace`). |
 | uv, matugen, Material Symbols / Rubik / Readex Pro / JetBrains Mono Nerd fonts, adw-gtk3, Darkly | Not in Ubuntu's repos. |
-| dots-hyprland `./setup install --skip-alldeps` with a local `os-release` saying `ID=arch` | Its installer forces a broken Nix route on Ubuntu. |
+| dots-hyprland `./setup install --skip-alldeps` with a local `os-release` saying `ID=arch` | Its installer forces a broken Nix route on Ubuntu. Its shadow `render_power = 10` is set to 4: Hyprland 0.57 (the PPA's current version) caps it there and shows a config error otherwise. |
 | Patches ii (`FluentWinUI3` import) and end4-pC (`var double`, Logout, Sleep, notifications) | Ubuntu's Qt 6.10 rejects the first two, so the shells don't load. end4-pC's Logout (`pkill Hyprland`) gets undone by the `start-hyprland` watchdog, so it uses `hyprshutdown`. `custom/scripts/end4pc-patches.sh` re-applies the end4-pC patches at every login, because end4-pC's updater re-clones itself. |
 | Copies `home/` (see `manifest.txt`) | All the customizations. Replaced files are backed up to `~/.dotfiles-backup/`. |
 | Masks `waybar`, `swaync`, `hypridle`, `hyprsunset` user services | They start via `graphical-session.target` and fight end4-pC or duplicate ii's autostart. |
